@@ -1,0 +1,19 @@
+{
+  "name": "vikunja-mcp",
+  "version": "0.1.0",
+  "description": "Minimal, self-owned MCP server for Vikunja — one dependency, scoped read+additive tools.",
+  "type": "module",
+  "bin": {
+    "vikunja-mcp": "index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0"
+  },
+  "license": "MIT"
+}
