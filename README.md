@@ -28,9 +28,10 @@ This one is the opposite:
 | `list_tasks` | read | `GET /projects/{id}/tasks` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 
-`list_projects` and `list_tasks` support optional `page` and `per_page` (1–100).
-Responses include `{ page, count, items }` so agents can paginate until a page
-returns fewer items than `per_page`.
+`list_projects` and `list_tasks` support optional `page` and `per_page`.
+Responses include `{ page, total_pages, count, items }`; paginate by requesting
+successive pages while `page < total_pages`. Vikunja clamps `per_page` to its
+configured maximum, so rely on `total_pages` rather than the returned page size.
 
 Add tools deliberately — nothing is exposed unless you add it to the `TOOLS`
 array in `index.js`.

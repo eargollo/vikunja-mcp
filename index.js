@@ -50,11 +50,11 @@ function requireTitle(value) {
   return title;
 }
 
-function optionalPage(value, name = "page") {
+function optionalPage(value) {
   if (value === undefined) return undefined;
   const page = Number(value);
   if (!Number.isInteger(page) || page < 1) {
-    throw new Error(`${name} must be a positive integer`);
+    throw new Error("page must be a positive integer");
   }
   return page;
 }
@@ -119,18 +119,26 @@ async function api(method, path, body) {
     }
     throw new Error(`Vikunja ${method} ${path} -> ${res.status}: ${detail}`);
   }
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`Vikunja ${method} ${path} -> invalid JSON response`);
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Vikunja ${method} ${path} -> invalid JSON response`);
+    }
   }
+  return { data, headers: res.headers };
 }
 
-function paginatedResult(items, page, perPage) {
+function paginatedResult(items, page, perPage, headers) {
+  // Vikunja reports the authoritative page count in a response header; the
+  // frontend paginates off this too. Prefer it over guessing from page size,
+  // since Vikunja clamps per_page to its configured maximum server-side.
+  const totalPages = Number(headers?.get("x-pagination-total-pages"));
   return {
-    page: page ?? 1,
+    page,
     ...(perPage !== undefined ? { per_page: perPage } : {}),
+    ...(Number.isInteger(totalPages) && totalPages > 0 ? { total_pages: totalPages } : {}),
     count: items.length,
     items,
   };
@@ -141,7 +149,7 @@ const TOOLS = [
   {
     name: "list_projects",
     description:
-      "List Vikunja projects the token can see (id + title). Results are paginated; pass page/per_page or iterate pages until count is less than per_page.",
+      "List Vikunja projects the token can see (id + title). Results are paginated; pass page/per_page and request successive pages while page < total_pages.",
     inputSchema: {
       type: "object",
       properties: paginationSchema,
@@ -154,15 +162,15 @@ const TOOLS = [
         page: resolvedPage,
         per_page: resolvedPerPage,
       });
-      const projects = await api("GET", `/projects${query}`);
-      const items = (projects ?? []).map((p) => ({ id: p.id, title: p.title }));
-      return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage);
+      const { data, headers } = await api("GET", `/projects${query}`);
+      const items = (data ?? []).map((p) => ({ id: p.id, title: p.title }));
+      return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
     },
   },
   {
     name: "list_tasks",
     description:
-      "List tasks in a project by project id (id, title, done). Results are paginated; pass page/per_page or iterate pages until count is less than per_page.",
+      "List tasks in a project by project id (id, title, done). Results are paginated; pass page/per_page and request successive pages while page < total_pages.",
     inputSchema: {
       type: "object",
       properties: {
@@ -180,9 +188,9 @@ const TOOLS = [
         page: resolvedPage,
         per_page: resolvedPerPage,
       });
-      const tasks = await api("GET", `/projects/${id}/tasks${query}`);
-      const items = (tasks ?? []).map((t) => ({ id: t.id, title: t.title, done: t.done }));
-      return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage);
+      const { data, headers } = await api("GET", `/projects/${id}/tasks${query}`);
+      const items = (data ?? []).map((t) => ({ id: t.id, title: t.title, done: t.done }));
+      return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
     },
   },
   {
@@ -200,7 +208,7 @@ const TOOLS = [
     run: async ({ project_id, title }) => {
       const id = requireProjectId(project_id);
       const taskTitle = requireTitle(title);
-      const task = await api("PUT", `/projects/${id}/tasks`, { title: taskTitle });
+      const { data: task } = await api("PUT", `/projects/${id}/tasks`, { title: taskTitle });
       if (!task || task.id == null) {
         throw new Error("Vikunja returned an empty task response");
       }
