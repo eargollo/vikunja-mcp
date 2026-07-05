@@ -1,6 +1,6 @@
 {
   "name": "vikunja-mcp",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Minimal, self-owned MCP server for Vikunja — one dependency, scoped read+additive tools.",
   "type": "module",
   "bin": {

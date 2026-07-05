@@ -210,7 +210,7 @@ const TOOLS = [
 ];
 
 const server = new Server(
-  { name: "vikunja-mcp", version: "0.1.1" },
+  { name: "vikunja-mcp", version: "0.1.0" },
   { capabilities: { tools: {} } },
 );
 
