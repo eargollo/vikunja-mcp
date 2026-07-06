@@ -42,18 +42,16 @@ jobs:
       # Gate the release on the unit suite so a tag can't ship broken helpers.
       - run: npm test
 
-      # Trusted Publishing (OIDC) needs npm >= 11.5.1; Node 20 ships npm 10.x.
-      # Upgrade + publish in one step so the new npm is definitely the one
-      # running publish, and print diagnostics to confirm OIDC is available.
-      - name: Publish to npm (OIDC, no token)
+      # Publish via OIDC Trusted Publishing (no token, provenance attached).
+      # Needs npm >= 11.5.1; Node 20 ships npm 10.x, so upgrade first. Upgrade
+      # and publish in one step so the new npm is the one that runs publish.
+      # Do NOT add setup-node registry-url: it writes a placeholder-token
+      # .npmrc that npm uses instead of OIDC (→ 404). Requires a Trusted
+      # Publisher for this repo + release.yml configured on npmjs.com.
+      - name: Publish to npm (OIDC Trusted Publishing)
         run: |
           npm install -g npm@latest
-          hash -r
-          echo "node: $(node --version)"
-          echo "npm:  $(npm --version)"
-          echo "OIDC request url present: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
-          echo "registry: $(npm config get registry)"
-          npm publish --access public --loglevel verbose
+          npm publish --access public
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

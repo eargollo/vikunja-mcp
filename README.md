@@ -98,6 +98,17 @@ Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
 
 ## Run it
 
+Published to npm as [`@eargollo/vikunja-mcp`](https://www.npmjs.com/package/@eargollo/vikunja-mcp)
+(with build provenance). Run it straight from the registry:
+
+```bash
+VIKUNJA_URL=http://192.168.100.20:3456/api/v1 \
+VIKUNJA_API_TOKEN=tk_... \
+  npx @eargollo/vikunja-mcp
+```
+
+Or clone and run from source (no build step):
+
 ```bash
 git clone https://github.com/eargollo/vikunja-mcp
 cd vikunja-mcp
