@@ -95,6 +95,12 @@ Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
 | --- | --- |
 | `VIKUNJA_URL` | `http://192.168.100.20:3456/api/v1` (note the `/api/v1`) |
 | `VIKUNJA_API_TOKEN` | `tk_...` (a Vikunja API token, scoped to Projects + Tasks) |
+| `VIKUNJA_MCP_ALLOW_WRITE` | `1` to also expose **write** (update) tools — off by default |
+| `VIKUNJA_MCP_ALLOW_DELETE` | `1` to also expose **delete** (destructive) tools — off by default |
+
+Read and additive tools are always available. Mutating and destructive tools
+are registered only when the matching flag is set (`1`/`true`/`yes`/`on`), so a
+default install can read and add but never modify or destroy.
 
 ## Run it
 

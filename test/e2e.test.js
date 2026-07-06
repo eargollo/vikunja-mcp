@@ -53,6 +53,29 @@ test("exposes exactly the read + additive tool set", { skip }, async () => {
   assert.deepEqual(names, ["create_task", "list_projects", "list_tasks"]);
 });
 
+test("enabling write/delete flags never drops the default read+additive tools", { skip }, async () => {
+  // Spawn a second server with both gates open and confirm the default tools
+  // still appear (a superset). No write/delete tools ship yet, so today the
+  // sets match; this locks in the invariant so gated tools can only ever be
+  // added, never accidentally hide the read+additive baseline.
+  const gated = new StdioClientTransport({
+    command: "node",
+    args: [SERVER],
+    env: { ...process.env, VIKUNJA_MCP_ALLOW_WRITE: "1", VIKUNJA_MCP_ALLOW_DELETE: "1" },
+    stderr: "inherit",
+  });
+  const gatedClient = new Client({ name: "vikunja-mcp-e2e-gated", version: "0.1.0" });
+  await gatedClient.connect(gated);
+  try {
+    const names = new Set((await gatedClient.listTools()).tools.map((t) => t.name));
+    for (const base of ["create_task", "list_projects", "list_tasks"]) {
+      assert.ok(names.has(base), `${base} should remain exposed with flags set`);
+    }
+  } finally {
+    await gatedClient.close();
+  }
+});
+
 test("list_projects returns a paginated envelope with the seeded Inbox", { skip }, async () => {
   const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
   assert.ok(Array.isArray(projects.items), "items should be an array");
