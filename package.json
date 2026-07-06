@@ -10,7 +10,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test",
+    "test:e2e": "node --env-file=.env --test test/e2e.test.js",
+    "up": "docker compose up -d",
+    "down": "docker compose down",
+    "reset": "docker compose down -v",
+    "bootstrap": "node scripts/bootstrap.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0"

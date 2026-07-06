@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Pure helpers only — no Docker, no network. The e2e file self-skips here
+      # because VIKUNJA_URL / VIKUNJA_API_TOKEN aren't set.
+      - run: npm test
+
+  e2e:
+    name: End-to-end (live Vikunja)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Start Vikunja
+        run: npm run up
+      - name: Bootstrap test user and .env
+        run: npm run bootstrap
+      - name: Run end-to-end tests
+        run: npm run test:e2e
+      - name: Show Vikunja logs on failure
+        if: failure()
+        run: docker compose logs vikunja
+      - name: Stop Vikunja
+        if: always()
+        run: npm run down
