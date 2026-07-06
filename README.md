@@ -36,6 +36,59 @@ configured maximum, so rely on `total_pages` rather than the returned page size.
 Add tools deliberately — nothing is exposed unless you add it to the `TOOLS`
 array in `index.js`.
 
+## Using the tools
+
+The server speaks MCP over stdio; any MCP client (Cursor, Claude Desktop,
+OpenClaw, the SDK) calls the tools by name. Arguments and results are JSON.
+
+```jsonc
+// list_projects  (no args, or { "page": 1, "per_page": 50 })
+{ "page": 1, "total_pages": 1, "count": 2,
+  "items": [ { "id": 1, "title": "Inbox" }, { "id": 7, "title": "Work" } ] }
+
+// list_tasks     { "project_id": 7 }
+{ "page": 1, "total_pages": 1, "count": 1,
+  "items": [ { "id": 42, "title": "Ship v0.1.0", "done": false } ] }
+
+// create_task    { "project_id": 7, "title": "Write the changelog" }
+{ "id": 43, "title": "Write the changelog" }
+```
+
+List tools return a **paginated envelope** — iterate `page` while
+`page < total_pages`. Invalid input (bad `project_id`, empty `title`, unknown
+tool) comes back as an MCP tool error (`isError: true`) with a message, never a
+crash.
+
+## API coverage
+
+The goal is to cover the whole Vikunja v1 API, added TDD-style (unit + e2e). To
+keep the [trust posture](#why-this-exists), tools are tiered: **read** and
+**additive** are always on; **write** (update) tools require
+`VIKUNJA_MCP_ALLOW_WRITE=1` and **delete** tools require
+`VIKUNJA_MCP_ALLOW_DELETE=1`, so a default install can never modify or destroy
+data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
+
+| Area | Status |
+| --- | --- |
+| Projects — list, create | ✅ shipped |
+| Tasks — list, create | ✅ shipped |
+| Task detail & filtering | 🔜 [#5](https://github.com/eargollo/vikunja-mcp/issues/5) |
+| Rich task create & update | 🔜 [#6](https://github.com/eargollo/vikunja-mcp/issues/6) |
+| Projects — get, update, archive, delete | 🔜 [#7](https://github.com/eargollo/vikunja-mcp/issues/7) |
+| Labels | 🔜 [#8](https://github.com/eargollo/vikunja-mcp/issues/8) |
+| Assignees | 🔜 [#9](https://github.com/eargollo/vikunja-mcp/issues/9) |
+| Comments | 🔜 [#10](https://github.com/eargollo/vikunja-mcp/issues/10) |
+| Task relations | 🔜 [#11](https://github.com/eargollo/vikunja-mcp/issues/11) |
+| Attachments | 🔜 [#12](https://github.com/eargollo/vikunja-mcp/issues/12) |
+| Kanban buckets | 🔜 [#13](https://github.com/eargollo/vikunja-mcp/issues/13) |
+| Teams & sharing | 🔜 [#14](https://github.com/eargollo/vikunja-mcp/issues/14) |
+| Saved filters | 🔜 [#15](https://github.com/eargollo/vikunja-mcp/issues/15) |
+| Subscriptions & notifications | 🔜 [#16](https://github.com/eargollo/vikunja-mcp/issues/16) |
+| Current user & API tokens | 🔜 [#17](https://github.com/eargollo/vikunja-mcp/issues/17) |
+| Webhooks | 🔜 [#18](https://github.com/eargollo/vikunja-mcp/issues/18) |
+
+Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
+
 ## Config
 
 | Env var | Example |
@@ -119,6 +172,14 @@ Notes:
 - The bootstrap uses the login **session JWT** as the bearer token — Vikunja
   accepts it exactly where `index.js` sends `Bearer`, which keeps the test setup
   simple. In production, use a scoped `tk_` API token instead (see Config above).
+
+## Releasing
+
+Releases are cut from `v*` git tags via
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which runs the
+unit tests and publishes a GitHub Release with generated notes. The version is
+bumped only at release time (`npm version`), never in feature PRs. See
+[`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## License
 

@@ -1,10 +1,28 @@
 {
-  "name": "vikunja-mcp",
+  "name": "@eargollo/vikunja-mcp",
   "version": "0.1.0",
   "description": "Minimal, self-owned MCP server for Vikunja — one dependency, scoped read+additive tools.",
   "type": "module",
   "bin": {
     "vikunja-mcp": "index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eargollo/vikunja-mcp.git"
+  },
+  "homepage": "https://github.com/eargollo/vikunja-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/eargollo/vikunja-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "vikunja",
+    "task-management",
+    "todo"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=20"
