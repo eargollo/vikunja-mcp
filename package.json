@@ -6,6 +6,12 @@
   "bin": {
     "vikunja-mcp": "index.js"
   },
+  "files": [
+    "index.js",
+    "lib.js",
+    "README.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eargollo/vikunja-mcp.git"
