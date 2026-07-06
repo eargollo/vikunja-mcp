@@ -1,0 +1,56 @@
+name: Release
+
+# Cut a GitHub Release whenever a version tag is pushed. The release process is:
+#
+#   npm version minor        # bumps package.json + lockfile, commits, tags vX.Y.Z
+#   git push --follow-tags   # pushes the commit and the tag -> triggers this job
+#
+# For the very first release the manifest is already at the target version, so
+# tag it directly:  git tag v0.1.0 && git push origin v0.1.0
+#
+# Notes are generated from the merged PRs / commits since the previous tag.
+# Distribution is GitHub-only for now (clone + run); publishing the scoped
+# package to npm is a future toggle — see the commented block below.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Gate the release on the unit suite so a tag can't ship broken helpers.
+      - run: npm test
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+
+      # --- Future: publish @eargollo/vikunja-mcp to npm ---------------------
+      # Uncomment and add an NPM_TOKEN repo secret to distribute via the
+      # registry as well. publishConfig.access is already "public".
+      #
+      # - uses: actions/setup-node@v4
+      #   with:
+      #     node-version: 20
+      #     registry-url: https://registry.npmjs.org
+      # - run: npm publish
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
