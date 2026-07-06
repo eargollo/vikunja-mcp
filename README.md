@@ -148,6 +148,7 @@ pagination shaping). They need nothing but Node 20+ — no Docker, no network:
 
 ```bash
 npm test               # runs test/*.test.js; e2e self-skips when no Vikunja is configured
+npm run test:coverage  # same, with Node's built-in coverage report (no extra deps)
 ```
 
 End-to-end tests drive the real MCP server over stdio against a live Vikunja.
