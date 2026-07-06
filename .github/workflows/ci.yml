@@ -13,12 +13,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - run: npm ci
       # Pure helpers only — no Docker, no network. The e2e file self-skips here
-      # because VIKUNJA_URL / VIKUNJA_API_TOKEN aren't set.
-      - run: npm test
+      # because VIKUNJA_URL / VIKUNJA_API_TOKEN aren't set. Coverage report is
+      # printed to the job log.
+      - run: npm run test:coverage
 
   e2e:
     name: End-to-end (live Vikunja)
@@ -27,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - run: npm ci
       - name: Start Vikunja
