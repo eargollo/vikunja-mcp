@@ -28,28 +28,48 @@ function parse(result) {
   return JSON.parse(result.content[0].text);
 }
 
-let client;
-let transport;
+// Spawn a server + connected client with optional extra env (e.g. gating flags).
+function spawnClient(name, extraEnv = {}) {
+  const transport = new StdioClientTransport({
+    command: "node",
+    args: [SERVER],
+    env: { ...process.env, ...extraEnv },
+    stderr: "inherit",
+  });
+  const c = new Client({ name, version: "0.1.0" });
+  return { client: c, transport };
+}
+
+let client; // default: no gating flags
+let writeClient; // both write+delete flags on
 
 before(async () => {
   if (!hasEnv) return;
-  transport = new StdioClientTransport({
-    command: "node",
-    args: [SERVER],
-    env: process.env,
-    stderr: "inherit",
-  });
-  client = new Client({ name: "vikunja-mcp-e2e", version: "0.1.0" });
-  await client.connect(transport);
+  const spawned = spawnClient("vikunja-mcp-e2e");
+  client = spawned.client;
+  await client.connect(spawned.transport);
 });
 
 after(async () => {
   if (client) await client.close();
+  if (writeClient) await writeClient.close();
 });
 
-test("exposes exactly the read + additive tool set", { skip }, async () => {
-  const { tools } = await client.listTools();
-  const names = tools.map((t) => t.name).sort();
+// Lazily connect the flag-enabled client only when a write test needs it.
+async function getWriteClient() {
+  if (!writeClient) {
+    const spawned = spawnClient("vikunja-mcp-e2e-write", {
+      VIKUNJA_MCP_ALLOW_WRITE: "1",
+      VIKUNJA_MCP_ALLOW_DELETE: "1",
+    });
+    writeClient = spawned.client;
+    await writeClient.connect(spawned.transport);
+  }
+  return writeClient;
+}
+
+test("exposes exactly the read + additive tool set by default", { skip }, async () => {
+  const names = (await client.listTools()).tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
     "create_task",
     "get_task",
@@ -57,29 +77,18 @@ test("exposes exactly the read + additive tool set", { skip }, async () => {
     "list_projects",
     "list_tasks",
   ]);
+  assert.ok(!names.includes("update_task"), "write tools must be gated off by default");
+  assert.ok(!names.includes("set_task_done"), "write tools must be gated off by default");
 });
 
-test("enabling write/delete flags never drops the default read+additive tools", { skip }, async () => {
-  // Spawn a second server with both gates open and confirm the default tools
-  // still appear (a superset). No write/delete tools ship yet, so today the
-  // sets match; this locks in the invariant so gated tools can only ever be
-  // added, never accidentally hide the read+additive baseline.
-  const gated = new StdioClientTransport({
-    command: "node",
-    args: [SERVER],
-    env: { ...process.env, VIKUNJA_MCP_ALLOW_WRITE: "1", VIKUNJA_MCP_ALLOW_DELETE: "1" },
-    stderr: "inherit",
-  });
-  const gatedClient = new Client({ name: "vikunja-mcp-e2e-gated", version: "0.1.0" });
-  await gatedClient.connect(gated);
-  try {
-    const names = new Set((await gatedClient.listTools()).tools.map((t) => t.name));
-    for (const base of ["create_task", "list_projects", "list_tasks"]) {
-      assert.ok(names.has(base), `${base} should remain exposed with flags set`);
-    }
-  } finally {
-    await gatedClient.close();
+test("VIKUNJA_MCP_ALLOW_WRITE exposes the write tools without dropping the baseline", { skip }, async () => {
+  const wc = await getWriteClient();
+  const names = new Set((await wc.listTools()).tools.map((t) => t.name));
+  for (const base of ["create_task", "get_task", "list_projects", "list_tasks", "list_all_tasks"]) {
+    assert.ok(names.has(base), `${base} should still be exposed with flags set`);
   }
+  assert.ok(names.has("update_task"), "update_task appears when write is enabled");
+  assert.ok(names.has("set_task_done"), "set_task_done appears when write is enabled");
 });
 
 test("list_projects returns a paginated envelope with the seeded Inbox", { skip }, async () => {
@@ -142,6 +151,77 @@ test("get_task with a bad id surfaces a tool error", { skip }, async () => {
   const result = await client.callTool({ name: "get_task", arguments: { task_id: 0 } });
   assert.ok(result.isError, "expected isError for a bad task_id");
   assert.match(result.content[0].text, /positive integer/);
+});
+
+test("create_task accepts optional description/due_date/priority", { skip }, async () => {
+  const wc = await getWriteClient();
+  const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
+  const created = parse(
+    await wc.callTool({
+      name: "create_task",
+      arguments: {
+        project_id: projects.items[0].id,
+        title: `e2e rich ${process.hrtime.bigint()}`,
+        description: "from e2e",
+        due_date: "2026-08-01T09:00:00Z",
+        priority: 4,
+      },
+    }),
+  );
+  const detail = parse(await wc.callTool({ name: "get_task", arguments: { task_id: created.id } }));
+  assert.equal(detail.description, "from e2e");
+  assert.equal(detail.priority, 4);
+  // Compare the instant, not the exact string form Vikunja happens to echo.
+  assert.equal(Date.parse(detail.due_date), Date.parse("2026-08-01T09:00:00Z"));
+});
+
+test("update_task changes only the provided fields", { skip }, async () => {
+  const wc = await getWriteClient();
+  const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
+  const created = parse(
+    await wc.callTool({
+      name: "create_task",
+      arguments: { project_id: projects.items[0].id, title: `e2e update ${process.hrtime.bigint()}` },
+    }),
+  );
+  const updated = parse(
+    await wc.callTool({
+      name: "update_task",
+      arguments: { task_id: created.id, priority: 5, description: "edited" },
+    }),
+  );
+  assert.equal(updated.id, created.id);
+  assert.equal(updated.priority, 5);
+  assert.equal(updated.description, "edited");
+});
+
+test("set_task_done marks a task done then reopens it", { skip }, async () => {
+  const wc = await getWriteClient();
+  const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
+  const created = parse(
+    await wc.callTool({
+      name: "create_task",
+      arguments: { project_id: projects.items[0].id, title: `e2e done ${process.hrtime.bigint()}` },
+    }),
+  );
+  const done = parse(await wc.callTool({ name: "set_task_done", arguments: { task_id: created.id } }));
+  assert.equal(done.done, true);
+  const reopened = parse(
+    await wc.callTool({ name: "set_task_done", arguments: { task_id: created.id, done: false } }),
+  );
+  assert.equal(reopened.done, false);
+});
+
+test("update_task is not callable without the write flag", { skip }, async () => {
+  const result = await client.callTool({ name: "update_task", arguments: { task_id: 1, done: true } });
+  assert.ok(result.isError, "gated-out tool must not be callable");
+  assert.match(result.content[0].text, /Unknown tool/);
+});
+
+test("set_task_done is not callable without the write flag", { skip }, async () => {
+  const result = await client.callTool({ name: "set_task_done", arguments: { task_id: 1 } });
+  assert.ok(result.isError, "gated-out tool must not be callable");
+  assert.match(result.content[0].text, /Unknown tool/);
 });
 
 test("invalid project_id surfaces a tool error, not a crash", { skip }, async () => {
