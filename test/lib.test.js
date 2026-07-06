@@ -12,6 +12,8 @@ import {
   optionalPerPage,
   buildQuery,
   paginatedResult,
+  flagEnabled,
+  tierAllowed,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -101,4 +103,53 @@ test("paginatedResult omits per_page and total_pages when unavailable", () => {
 test("paginatedResult tolerates a missing headers object", () => {
   const result = paginatedResult([{ id: 9 }], 3, undefined, undefined);
   assert.deepEqual(result, { page: 3, count: 1, items: [{ id: 9 }] });
+});
+
+test("flagEnabled treats 1/true/yes/on (any case, trimmed) as enabled", () => {
+  for (const v of ["1", "true", "TRUE", "yes", "on", " 1 ", "On"]) {
+    assert.equal(flagEnabled(v), true, `should enable ${JSON.stringify(v)}`);
+  }
+});
+
+test("flagEnabled treats everything else as disabled", () => {
+  for (const v of [undefined, null, "", "0", "false", "no", "off", "2", "x"]) {
+    assert.equal(flagEnabled(v), false, `should disable ${JSON.stringify(v)}`);
+  }
+});
+
+test("tierAllowed: read/additive always on; write/delete need their flag", () => {
+  const off = { allowWrite: false, allowDelete: false };
+  assert.equal(tierAllowed("read", off), true);
+  assert.equal(tierAllowed("additive", off), true);
+  assert.equal(tierAllowed("write", off), false);
+  assert.equal(tierAllowed("delete", off), false);
+  assert.equal(tierAllowed("write", { allowWrite: true, allowDelete: false }), true);
+  assert.equal(tierAllowed("delete", { allowWrite: false, allowDelete: true }), true);
+});
+
+test("tierAllowed defaults to gated when flags are omitted", () => {
+  assert.equal(tierAllowed("write"), false);
+  assert.equal(tierAllowed("delete"), false);
+  assert.equal(tierAllowed("read"), true);
+});
+
+test("tierAllowed hides unknown/typo tiers even with both flags on (fail safe)", () => {
+  const open = { allowWrite: true, allowDelete: true };
+  assert.equal(tierAllowed("wrtie", open), false);
+  assert.equal(tierAllowed("admin", open), false);
+  assert.equal(tierAllowed(undefined, open), false);
+});
+
+test("tierAllowed filters a synthetic tool list by env flags", () => {
+  const tools = [
+    { name: "r", tier: "read" },
+    { name: "a", tier: "additive" },
+    { name: "w", tier: "write" },
+    { name: "d", tier: "delete" },
+  ];
+  const names = (flags) => tools.filter((t) => tierAllowed(t.tier, flags)).map((t) => t.name);
+  assert.deepEqual(names({ allowWrite: false, allowDelete: false }), ["r", "a"]);
+  assert.deepEqual(names({ allowWrite: true, allowDelete: false }), ["r", "a", "w"]);
+  assert.deepEqual(names({ allowWrite: false, allowDelete: true }), ["r", "a", "d"]);
+  assert.deepEqual(names({ allowWrite: true, allowDelete: true }), ["r", "a", "w", "d"]);
 });

@@ -75,3 +75,22 @@ export function paginatedResult(items, page, perPage, headers) {
     items,
   };
 }
+
+// Interpret an env-var value as a boolean feature flag. Only an explicit,
+// affirmative value turns a gated capability on; anything else (unset, "0",
+// "false", garbage) leaves it off — fail safe, never fail open.
+export function flagEnabled(value) {
+  if (value === undefined || value === null) return false;
+  const v = String(value).trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+// Decide whether a tool of the given tier may be exposed. Read + additive are
+// always on; write (update) and delete (destructive) require their opt-in flag,
+// so a default install can never modify or destroy data.
+export function tierAllowed(tier, { allowWrite = false, allowDelete = false } = {}) {
+  if (tier === "read" || tier === "additive") return true;
+  if (tier === "write") return allowWrite;
+  if (tier === "delete") return allowDelete;
+  return false; // unknown/typo tier: stay hidden — never fail open
+}
