@@ -14,6 +14,11 @@ import {
   paginatedResult,
   flagEnabled,
   tierAllowed,
+  requireTaskId,
+  optionalFilter,
+  optionalSortBy,
+  optionalOrder,
+  taskDetail,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -138,6 +143,84 @@ test("tierAllowed hides unknown/typo tiers even with both flags on (fail safe)",
   assert.equal(tierAllowed("wrtie", open), false);
   assert.equal(tierAllowed("admin", open), false);
   assert.equal(tierAllowed(undefined, open), false);
+});
+
+test("requireTaskId accepts positive integers and rejects the rest", () => {
+  assert.equal(requireTaskId(1), 1);
+  assert.equal(requireTaskId("42"), 42);
+  for (const bad of [0, -1, 1.5, "abc", "", null, undefined, NaN]) {
+    assert.throws(() => requireTaskId(bad), /positive integer/, `should reject ${String(bad)}`);
+  }
+});
+
+test("optionalFilter returns a trimmed string, undefined when absent/blank", () => {
+  assert.equal(optionalFilter(undefined), undefined);
+  assert.equal(optionalFilter("   "), undefined);
+  assert.equal(optionalFilter("  done = false  "), "done = false");
+  assert.throws(() => optionalFilter(123), /filter must be a string/);
+});
+
+test("optionalSortBy allows a field name and rejects injection-y input", () => {
+  assert.equal(optionalSortBy(undefined), undefined);
+  assert.equal(optionalSortBy("due_date"), "due_date");
+  assert.equal(optionalSortBy("priority"), "priority");
+  for (const bad of ["due date", "a;b", "done=1", "1bad", 5]) {
+    assert.throws(() => optionalSortBy(bad), /sort_by/, `should reject ${String(bad)}`);
+  }
+});
+
+test("optionalOrder normalizes asc/desc and rejects others", () => {
+  assert.equal(optionalOrder(undefined), undefined);
+  assert.equal(optionalOrder("asc"), "asc");
+  assert.equal(optionalOrder("DESC"), "desc");
+  assert.throws(() => optionalOrder("sideways"), /asc.*desc/);
+});
+
+test("taskDetail curates fields, nulls Vikunja zero-dates, maps labels/assignees", () => {
+  const detail = taskDetail({
+    id: 7,
+    title: "T",
+    description: "d",
+    done: false,
+    project_id: 3,
+    priority: 4,
+    percent_done: 0.5,
+    due_date: "2026-01-02T00:00:00Z",
+    start_date: "0001-01-01T00:00:00Z",
+    end_date: "0001-01-01T00:00:00Z",
+    identifier: "INBOX-7",
+    labels: [{ id: 1, title: "urgent", extra: "x" }],
+    assignees: [{ id: 9, username: "me", extra: "x" }],
+    secret: "dropme",
+  });
+  assert.deepEqual(detail, {
+    id: 7,
+    title: "T",
+    description: "d",
+    done: false,
+    project_id: 3,
+    priority: 4,
+    percent_done: 0.5,
+    due_date: "2026-01-02T00:00:00Z",
+    start_date: null,
+    end_date: null,
+    identifier: "INBOX-7",
+    labels: [{ id: 1, title: "urgent" }],
+    assignees: [{ id: 9, username: "me" }],
+  });
+});
+
+test("taskDetail omits labels/assignees when absent or empty", () => {
+  const detail = taskDetail({ id: 1, title: "x", done: true, project_id: 1, labels: null, assignees: [] });
+  assert.ok(!("labels" in detail));
+  assert.ok(!("assignees" in detail));
+});
+
+test("taskDetail preserves zero priority/percent_done and defaults identifier to ''", () => {
+  const detail = taskDetail({ id: 1, title: "x", done: false, project_id: 1, priority: 0, percent_done: 0 });
+  assert.equal(detail.priority, 0);
+  assert.equal(detail.percent_done, 0);
+  assert.equal(detail.identifier, "");
 });
 
 test("tierAllowed filters a synthetic tool list by env flags", () => {

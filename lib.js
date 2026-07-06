@@ -24,6 +24,14 @@ export function requireProjectId(value) {
   return id;
 }
 
+export function requireTaskId(value) {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("task_id must be a positive integer");
+  }
+  return id;
+}
+
 export function requireTitle(value) {
   if (typeof value !== "string") {
     throw new Error("title must be a string");
@@ -51,6 +59,61 @@ export function optionalPerPage(value) {
     throw new Error("per_page must be an integer between 1 and 100");
   }
   return perPage;
+}
+
+export function optionalFilter(value) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new Error("filter must be a string");
+  }
+  const filter = value.trim();
+  return filter === "" ? undefined : filter;
+}
+
+export function optionalSortBy(value) {
+  if (value === undefined) return undefined;
+  // A bare field name only — never arbitrary text — so it can't smuggle
+  // operators or extra query params into the Vikunja request.
+  if (typeof value !== "string" || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
+    throw new Error("sort_by must be a field name (letters, digits, underscore)");
+  }
+  return value;
+}
+
+export function optionalOrder(value) {
+  if (value === undefined) return undefined;
+  const order = String(value).toLowerCase();
+  if (order !== "asc" && order !== "desc") {
+    throw new Error("order_by must be 'asc' or 'desc'");
+  }
+  return order;
+}
+
+// Shape Vikunja's rich task object into a curated, agent-friendly detail view.
+// Drops fields owned by other tools/epics and normalizes Vikunja's zero-value
+// dates ("0001-01-01…") to null.
+export function taskDetail(t) {
+  const clean = (d) => (typeof d === "string" && !d.startsWith("0001-01-01") ? d : null);
+  const detail = {
+    id: t.id,
+    title: t.title,
+    description: t.description ?? "",
+    done: t.done ?? false,
+    project_id: t.project_id,
+    priority: t.priority ?? 0,
+    percent_done: t.percent_done ?? 0,
+    due_date: clean(t.due_date),
+    start_date: clean(t.start_date),
+    end_date: clean(t.end_date),
+    identifier: t.identifier ?? "",
+  };
+  if (Array.isArray(t.labels) && t.labels.length) {
+    detail.labels = t.labels.map((l) => ({ id: l.id, title: l.title }));
+  }
+  if (Array.isArray(t.assignees) && t.assignees.length) {
+    detail.assignees = t.assignees.map((a) => ({ id: a.id, username: a.username }));
+  }
+  return detail;
 }
 
 export function buildQuery(params) {
