@@ -50,7 +50,13 @@ after(async () => {
 test("exposes exactly the read + additive tool set", { skip }, async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ["create_task", "list_projects", "list_tasks"]);
+  assert.deepEqual(names, [
+    "create_task",
+    "get_task",
+    "list_all_tasks",
+    "list_projects",
+    "list_tasks",
+  ]);
 });
 
 test("enabling write/delete flags never drops the default read+additive tools", { skip }, async () => {
@@ -99,6 +105,43 @@ test("create_task then list_tasks round-trips the new task", { skip }, async () 
   const found = tasks.items.find((t) => t.id === created.id);
   assert.ok(found, "created task should appear in list_tasks");
   assert.equal(found.title, title);
+});
+
+test("get_task returns the full detail of a created task", { skip }, async () => {
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const projectId = projects.items[0].id;
+  const title = `e2e detail ${process.hrtime.bigint()}`;
+  const created = parse(
+    await client.callTool({ name: "create_task", arguments: { project_id: projectId, title } }),
+  );
+
+  const detail = parse(await client.callTool({ name: "get_task", arguments: { task_id: created.id } }));
+  assert.equal(detail.id, created.id);
+  assert.equal(detail.title, title);
+  assert.equal(detail.project_id, projectId);
+  assert.equal(detail.done, false);
+  // unset dates normalize to null rather than Vikunja's "0001-01-01…"
+  assert.equal(detail.due_date, null);
+});
+
+test("list_all_tasks finds a created task across projects and supports filter", { skip }, async () => {
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const projectId = projects.items[0].id;
+  const title = `e2e all ${process.hrtime.bigint()}`;
+  const created = parse(
+    await client.callTool({ name: "create_task", arguments: { project_id: projectId, title } }),
+  );
+
+  const all = parse(await client.callTool({ name: "list_all_tasks", arguments: { filter: "done = false" } }));
+  const found = all.items.find((t) => t.id === created.id);
+  assert.ok(found, "created task should appear in list_all_tasks");
+  assert.equal(found.project_id, projectId);
+});
+
+test("get_task with a bad id surfaces a tool error", { skip }, async () => {
+  const result = await client.callTool({ name: "get_task", arguments: { task_id: 0 } });
+  assert.ok(result.isError, "expected isError for a bad task_id");
+  assert.match(result.content[0].text, /positive integer/);
 });
 
 test("invalid project_id surfaces a tool error, not a crash", { skip }, async () => {

@@ -28,8 +28,86 @@ test("the currently shipped tools are read/additive only", () => {
   assert.deepEqual(tiers, {
     list_projects: "read",
     list_tasks: "read",
+    list_all_tasks: "read",
+    get_task: "read",
     create_task: "additive",
   });
+});
+
+test("get_task validates the id, fetches /tasks/{id}, and shapes the detail", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/tasks/42");
+    return {
+      data: { id: 42, title: "T", done: false, project_id: 3, due_date: "0001-01-01T00:00:00Z" },
+      headers: headers(),
+    };
+  };
+  const res = await byName(buildTools({ api }), "get_task").run({ task_id: 42 });
+  assert.equal(res.id, 42);
+  assert.equal(res.due_date, null, "zero-date normalized");
+});
+
+test("get_task errors when Vikunja returns an empty/malformed body", async () => {
+  const api = async () => ({ data: null, headers: headers() });
+  await assert.rejects(() => byName(buildTools({ api }), "get_task").run({ task_id: 5 }), /no task/);
+});
+
+test("get_task rejects a bad id before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(() => byName(buildTools({ api }), "get_task").run({ task_id: 0 }), /positive integer/);
+  assert.equal(called, false);
+});
+
+test("list_tasks forwards filter/sort_by/order_by alongside pagination", async () => {
+  let seenPath;
+  const api = async (_m, path) => {
+    seenPath = path;
+    return { data: [], headers: headers() };
+  };
+  await byName(buildTools({ api }), "list_tasks").run({
+    project_id: 3,
+    filter: "done = false",
+    sort_by: "priority",
+    order_by: "desc",
+    page: 2,
+  });
+  assert.equal(seenPath, "/projects/3/tasks?filter=done+%3D+false&sort_by=priority&order_by=desc&page=2");
+});
+
+test("list_all_tasks hits /tasks with filter/sort and maps id/title/done/project_id", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/tasks?filter=priority+%3E%3D+3&sort_by=due_date&order_by=asc");
+    return {
+      data: [{ id: 5, title: "A", done: false, project_id: 2, extra: "drop" }],
+      headers: headers({ "x-pagination-total-pages": "1" }),
+    };
+  };
+  const res = await byName(buildTools({ api }), "list_all_tasks").run({
+    filter: "priority >= 3",
+    sort_by: "due_date",
+    order_by: "asc",
+  });
+  assert.deepEqual(res.items, [{ id: 5, title: "A", done: false, project_id: 2 }]);
+  assert.equal(res.total_pages, 1);
+});
+
+test("list_all_tasks rejects an invalid order_by before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: [], headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "list_all_tasks").run({ order_by: "up" }),
+    /asc.*desc/,
+  );
+  assert.equal(called, false);
 });
 
 test("the real registration filter gates write/delete tiers behind their flags", () => {
@@ -45,7 +123,7 @@ test("the real registration filter gates write/delete tiers behind their flags",
 
   assert.deepEqual(
     exposed({ allowWrite: false, allowDelete: false }).sort(),
-    ["create_task", "list_projects", "list_tasks"],
+    ["create_task", "get_task", "list_all_tasks", "list_projects", "list_tasks"],
     "default install exposes read+additive only",
   );
   assert.ok(exposed({ allowWrite: true, allowDelete: false }).includes("update_task"));
