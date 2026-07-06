@@ -43,11 +43,16 @@ jobs:
       - run: npm test
 
       # Trusted Publishing (OIDC) needs npm >= 11.5.1; Node 20 ships npm 10.x.
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest
-
+      # Upgrade + publish in one step so the new npm is definitely the one
+      # running publish, and print diagnostics to confirm OIDC is available.
       - name: Publish to npm (OIDC, no token)
-        run: npm publish --access public
+        run: |
+          npm install -g npm@latest
+          hash -r
+          echo "node: $(node --version)"
+          echo "npm:  $(npm --version)"
+          echo "OIDC request url present: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
+          npm publish --access public
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
