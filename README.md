@@ -28,6 +28,11 @@ This one is the opposite:
 | `list_tasks` | read | `GET /projects/{id}/tasks` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 
+`list_projects` and `list_tasks` support optional `page` and `per_page`.
+Responses include `{ page, total_pages, count, items }`; paginate by requesting
+successive pages while `page < total_pages`. Vikunja clamps `per_page` to its
+configured maximum, so rely on `total_pages` rather than the returned page size.
+
 Add tools deliberately — nothing is exposed unless you add it to the `TOOLS`
 array in `index.js`.
 
@@ -47,6 +52,25 @@ npm install          # installs only @modelcontextprotocol/sdk
 VIKUNJA_URL=http://192.168.100.20:3456/api/v1 \
 VIKUNJA_API_TOKEN=tk_... \
   node index.js
+```
+
+## Register in Cursor / Claude Desktop
+
+Add to `.mcp.json` in your project (or global MCP config):
+
+```json
+{
+  "mcpServers": {
+    "vikunja": {
+      "command": "node",
+      "args": ["/path/to/vikunja-mcp/index.js"],
+      "env": {
+        "VIKUNJA_URL": "http://192.168.100.20:3456/api/v1",
+        "VIKUNJA_API_TOKEN": "tk_..."
+      }
+    }
+  }
+}
 ```
 
 ## Register in OpenClaw

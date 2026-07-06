@@ -18,11 +18,84 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const BASE = process.env.VIKUNJA_URL; // e.g. http://192.168.100.20:3456/api/v1
-const TOKEN = process.env.VIKUNJA_API_TOKEN;
+function requireAbsoluteUrl(value, name) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} must be an absolute URL (e.g. http://host:3456/api/v1)`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${name} must use http or https`);
+  }
+  return url.toString().replace(/\/+$/, "");
+}
 
-if (!BASE || !TOKEN) {
-  console.error("vikunja-mcp: set VIKUNJA_URL and VIKUNJA_API_TOKEN");
+function requireProjectId(value) {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("project_id must be a positive integer");
+  }
+  return id;
+}
+
+function requireTitle(value) {
+  if (typeof value !== "string") {
+    throw new Error("title must be a string");
+  }
+  const title = value.trim();
+  if (!title) {
+    throw new Error("title must not be empty");
+  }
+  return title;
+}
+
+function optionalPage(value) {
+  if (value === undefined) return undefined;
+  const page = Number(value);
+  if (!Number.isInteger(page) || page < 1) {
+    throw new Error("page must be a positive integer");
+  }
+  return page;
+}
+
+function optionalPerPage(value) {
+  if (value === undefined) return undefined;
+  const perPage = Number(value);
+  if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100) {
+    throw new Error("per_page must be an integer between 1 and 100");
+  }
+  return perPage;
+}
+
+function buildQuery(params) {
+  const search = new URLSearchParams();
+  for (const [key, val] of Object.entries(params)) {
+    if (val !== undefined) search.set(key, String(val));
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
+const paginationSchema = {
+  page: { type: "number", description: "Page number (default: 1)" },
+  per_page: {
+    type: "number",
+    description: "Items per page, 1-100 (Vikunja default if omitted)",
+  },
+};
+
+let BASE;
+try {
+  BASE = requireAbsoluteUrl(process.env.VIKUNJA_URL, "VIKUNJA_URL");
+} catch (err) {
+  console.error(`vikunja-mcp: ${err.message}`);
+  process.exit(1);
+}
+
+const TOKEN = process.env.VIKUNJA_API_TOKEN;
+if (!TOKEN) {
+  console.error("vikunja-mcp: set VIKUNJA_API_TOKEN");
   process.exit(1);
 }
 
@@ -39,34 +112,85 @@ async function api(method, path, body) {
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Vikunja ${method} ${path} -> ${res.status}: ${text.slice(0, 400)}`);
+    const detail = text.slice(0, 400);
+    console.error(`vikunja-mcp: ${method} ${path} -> ${res.status}: ${detail}`);
+    if (res.status >= 500) {
+      throw new Error(`Vikunja ${method} ${path} -> ${res.status}: server error`);
+    }
+    throw new Error(`Vikunja ${method} ${path} -> ${res.status}: ${detail}`);
   }
-  return text ? JSON.parse(text) : null;
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Vikunja ${method} ${path} -> invalid JSON response`);
+    }
+  }
+  return { data, headers: res.headers };
+}
+
+function paginatedResult(items, page, perPage, headers) {
+  // Vikunja reports the authoritative page count in a response header; the
+  // frontend paginates off this too. Prefer it over guessing from page size,
+  // since Vikunja clamps per_page to its configured maximum server-side.
+  const totalPages = Number(headers?.get("x-pagination-total-pages"));
+  return {
+    page,
+    ...(perPage !== undefined ? { per_page: perPage } : {}),
+    ...(Number.isInteger(totalPages) && totalPages > 0 ? { total_pages: totalPages } : {}),
+    count: items.length,
+    items,
+  };
 }
 
 // Read + additive only. Add tools here deliberately; nothing is exposed by default.
 const TOOLS = [
   {
     name: "list_projects",
-    description: "List Vikunja projects the token can see (id + title).",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    run: async () => {
-      const projects = await api("GET", "/projects");
-      return (projects ?? []).map((p) => ({ id: p.id, title: p.title }));
+    description:
+      "List Vikunja projects the token can see (id + title). Results are paginated; pass page/per_page and request successive pages while page < total_pages.",
+    inputSchema: {
+      type: "object",
+      properties: paginationSchema,
+      additionalProperties: false,
+    },
+    run: async ({ page, per_page } = {}) => {
+      const resolvedPage = optionalPage(page);
+      const resolvedPerPage = optionalPerPage(per_page);
+      const query = buildQuery({
+        page: resolvedPage,
+        per_page: resolvedPerPage,
+      });
+      const { data, headers } = await api("GET", `/projects${query}`);
+      const items = (data ?? []).map((p) => ({ id: p.id, title: p.title }));
+      return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
     },
   },
   {
     name: "list_tasks",
-    description: "List tasks in a project by project id (id, title, done).",
+    description:
+      "List tasks in a project by project id (id, title, done). Results are paginated; pass page/per_page and request successive pages while page < total_pages.",
     inputSchema: {
       type: "object",
-      properties: { project_id: { type: "number", description: "Vikunja project id" } },
+      properties: {
+        project_id: { type: "number", description: "Vikunja project id" },
+        ...paginationSchema,
+      },
       required: ["project_id"],
       additionalProperties: false,
     },
-    run: async ({ project_id }) => {
-      const tasks = await api("GET", `/projects/${project_id}/tasks`);
-      return (tasks ?? []).map((t) => ({ id: t.id, title: t.title, done: t.done }));
+    run: async ({ project_id, page, per_page }) => {
+      const id = requireProjectId(project_id);
+      const resolvedPage = optionalPage(page);
+      const resolvedPerPage = optionalPerPage(per_page);
+      const query = buildQuery({
+        page: resolvedPage,
+        per_page: resolvedPerPage,
+      });
+      const { data, headers } = await api("GET", `/projects/${id}/tasks${query}`);
+      const items = (data ?? []).map((t) => ({ id: t.id, title: t.title, done: t.done }));
+      return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
     },
   },
   {
@@ -82,7 +206,12 @@ const TOOLS = [
       additionalProperties: false,
     },
     run: async ({ project_id, title }) => {
-      const task = await api("PUT", `/projects/${project_id}/tasks`, { title });
+      const id = requireProjectId(project_id);
+      const taskTitle = requireTitle(title);
+      const { data: task } = await api("PUT", `/projects/${id}/tasks`, { title: taskTitle });
+      if (!task || task.id == null) {
+        throw new Error("Vikunja returned an empty task response");
+      }
       return { id: task.id, title: task.title };
     },
   },
@@ -98,9 +227,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
-  const tool = TOOLS.find((t) => t.name === req.params.name);
-  if (!tool) throw new Error(`Unknown tool: ${req.params.name}`);
   try {
+    const tool = TOOLS.find((t) => t.name === req.params.name);
+    if (!tool) throw new Error(`Unknown tool: ${req.params.name}`);
     const result = await tool.run(req.params.arguments ?? {});
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   } catch (err) {
