@@ -71,14 +71,17 @@ async function getWriteClient() {
 test("exposes exactly the read + additive tool set by default", { skip }, async () => {
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
+    "create_project",
     "create_task",
+    "get_project",
     "get_task",
     "list_all_tasks",
     "list_projects",
     "list_tasks",
   ]);
-  assert.ok(!names.includes("update_task"), "write tools must be gated off by default");
-  assert.ok(!names.includes("set_task_done"), "write tools must be gated off by default");
+  for (const gated of ["update_task", "set_task_done", "update_project", "archive_project", "delete_project"]) {
+    assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
+  }
 });
 
 test("VIKUNJA_MCP_ALLOW_WRITE exposes the write tools without dropping the baseline", { skip }, async () => {
@@ -221,6 +224,55 @@ test("update_task is not callable without the write flag", { skip }, async () =>
 test("set_task_done is not callable without the write flag", { skip }, async () => {
   const result = await client.callTool({ name: "set_task_done", arguments: { task_id: 1 } });
   assert.ok(result.isError, "gated-out tool must not be callable");
+  assert.match(result.content[0].text, /Unknown tool/);
+});
+
+test("create_project then get_project round-trips (additive + read)", { skip }, async () => {
+  const created = parse(
+    await client.callTool({
+      name: "create_project",
+      arguments: { title: `e2e project ${process.hrtime.bigint()}`, description: "made in e2e" },
+    }),
+  );
+  assert.ok(Number.isInteger(created.id));
+  const detail = parse(await client.callTool({ name: "get_project", arguments: { project_id: created.id } }));
+  assert.equal(detail.id, created.id);
+  assert.equal(detail.description, "made in e2e");
+  assert.equal(detail.is_archived, false);
+});
+
+test("update_project and archive_project change fields (write)", { skip }, async () => {
+  const wc = await getWriteClient();
+  const created = parse(
+    await wc.callTool({ name: "create_project", arguments: { title: `e2e proj upd ${process.hrtime.bigint()}` } }),
+  );
+  const renamed = parse(
+    await wc.callTool({ name: "update_project", arguments: { project_id: created.id, title: "Renamed E2E" } }),
+  );
+  assert.equal(renamed.title, "Renamed E2E");
+  const archived = parse(await wc.callTool({ name: "archive_project", arguments: { project_id: created.id } }));
+  assert.equal(archived.is_archived, true);
+  const unarchived = parse(
+    await wc.callTool({ name: "archive_project", arguments: { project_id: created.id, archived: false } }),
+  );
+  assert.equal(unarchived.is_archived, false);
+});
+
+test("delete_project removes a project (delete tier)", { skip }, async () => {
+  const wc = await getWriteClient();
+  const created = parse(
+    await wc.callTool({ name: "create_project", arguments: { title: `e2e proj del ${process.hrtime.bigint()}` } }),
+  );
+  const res = parse(await wc.callTool({ name: "delete_project", arguments: { project_id: created.id } }));
+  assert.deepEqual(res, { id: created.id, deleted: true });
+  // it should be gone now
+  const after = await wc.callTool({ name: "get_project", arguments: { project_id: created.id } });
+  assert.ok(after.isError, "deleted project should no longer be fetchable");
+});
+
+test("delete_project is not callable without the delete flag", { skip }, async () => {
+  const result = await client.callTool({ name: "delete_project", arguments: { project_id: 1 } });
+  assert.ok(result.isError, "delete tool must be gated off by default");
   assert.match(result.content[0].text, /Unknown tool/);
 });
 

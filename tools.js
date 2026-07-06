@@ -18,9 +18,11 @@ import {
   optionalPriority,
   optionalDueDate,
   optionalBoolean,
+  optionalParentProjectId,
   buildQuery,
   paginatedResult,
   taskDetail,
+  projectDetail,
 } from "./lib.js";
 
 const paginationSchema = {
@@ -43,6 +45,38 @@ const filterSortSchema = {
 // Read + additive only. Add tools here deliberately; give each a `tier` so the
 // gating in index.js can keep write/delete off by default.
 export function buildTools({ api }) {
+  // Vikunja's project update (POST /projects/{id}) requires `title` and behaves
+  // like a full replace — omitted fields can be zeroed. So fetch the current
+  // project and send every editable field back, overriding only what changed.
+  // `??` merges safely: it keeps falsy-but-valid changes (is_archived=false,
+  // parent=0, description="") and only falls back to current on undefined.
+  //
+  // identifier/hex_color/is_favorite aren't settable via this server; they're
+  // carried through unchanged purely so the full-replace POST doesn't clear
+  // them. This is a read-modify-write, so a concurrent edit between the GET and
+  // the POST is lost (no optimistic concurrency in the API) — accepted for a
+  // single-user MCP.
+  const updateProjectMerged = async (id, changes) => {
+    const { data: current } = await api("GET", `/projects/${id}`);
+    if (!current || current.id == null) {
+      throw new Error("Vikunja returned no project");
+    }
+    const body = {
+      title: changes.title ?? current.title,
+      description: changes.description ?? current.description ?? "",
+      identifier: current.identifier ?? "",
+      hex_color: current.hex_color ?? "",
+      parent_project_id: changes.parent_project_id ?? current.parent_project_id ?? 0,
+      is_archived: changes.is_archived ?? current.is_archived ?? false,
+      is_favorite: current.is_favorite ?? false,
+    };
+    const { data: project } = await api("POST", `/projects/${id}`, body);
+    if (!project || project.id == null) {
+      throw new Error("Vikunja returned an empty project response");
+    }
+    return projectDetail(project);
+  };
+
   return [
     {
       name: "list_projects",
@@ -238,6 +272,119 @@ export function buildTools({ api }) {
           throw new Error("Vikunja returned an empty task response");
         }
         return taskDetail(task);
+      },
+    },
+    {
+      name: "get_project",
+      tier: "read",
+      description:
+        "Get one project by id (title, description, identifier, parent, archived/favorite flags).",
+      inputSchema: {
+        type: "object",
+        properties: { project_id: { type: "number", description: "Vikunja project id" } },
+        required: ["project_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id }) => {
+        const id = requireProjectId(project_id);
+        const { data } = await api("GET", `/projects/${id}`);
+        if (!data || data.id == null) {
+          throw new Error("Vikunja returned no project");
+        }
+        return projectDetail(data);
+      },
+    },
+    {
+      name: "create_project",
+      tier: "additive",
+      description:
+        "Create a project. Requires a title; optional description and parent_project_id (nest under a parent).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Project title" },
+          description: { type: "string", description: "Project description" },
+          parent_project_id: { type: "number", description: "Parent project id (omit for top level)" },
+        },
+        required: ["title"],
+        additionalProperties: false,
+      },
+      run: async ({ title, description, parent_project_id }) => {
+        const body = { title: requireTitle(title) };
+        const desc = optionalDescription(description);
+        if (desc !== undefined) body.description = desc;
+        const parent = optionalParentProjectId(parent_project_id);
+        if (parent !== undefined) body.parent_project_id = parent;
+        const { data: project } = await api("PUT", "/projects", body);
+        if (!project || project.id == null) {
+          throw new Error("Vikunja returned an empty project response");
+        }
+        return { id: project.id, title: project.title };
+      },
+    },
+    {
+      name: "update_project",
+      tier: "write",
+      description:
+        "Update fields of a project by id (title, description, parent_project_id). Only the fields you pass are changed.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "number", description: "Vikunja project id" },
+          title: { type: "string", description: "New title" },
+          description: { type: "string", description: "New description" },
+          parent_project_id: { type: "number", description: "New parent (0 = top level)" },
+        },
+        required: ["project_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, title, description, parent_project_id }) => {
+        const id = requireProjectId(project_id);
+        const changes = {};
+        if (title !== undefined) changes.title = requireTitle(title);
+        const desc = optionalDescription(description);
+        if (desc !== undefined) changes.description = desc;
+        const parent = optionalParentProjectId(parent_project_id);
+        if (parent !== undefined) changes.parent_project_id = parent;
+        if (Object.keys(changes).length === 0) {
+          throw new Error("update_project: no fields to update");
+        }
+        return updateProjectMerged(id, changes);
+      },
+    },
+    {
+      name: "archive_project",
+      tier: "write",
+      description: "Archive a project, or unarchive it with archived=false (defaults to archived=true).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "number", description: "Vikunja project id" },
+          archived: { type: "boolean", description: "true to archive (default), false to unarchive" },
+        },
+        required: ["project_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, archived }) => {
+        const id = requireProjectId(project_id);
+        const isArchived = archived === undefined ? true : optionalBoolean(archived, "archived");
+        return updateProjectMerged(id, { is_archived: isArchived });
+      },
+    },
+    {
+      name: "delete_project",
+      tier: "delete",
+      description: "Delete a project by id (and its tasks). Irreversible.",
+      inputSchema: {
+        type: "object",
+        properties: { project_id: { type: "number", description: "Vikunja project id" } },
+        required: ["project_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id }) => {
+        const id = requireProjectId(project_id);
+        await api("DELETE", `/projects/${id}`);
+        return { id, deleted: true };
       },
     },
   ];

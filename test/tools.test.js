@@ -30,10 +30,129 @@ test("each tool has the expected tier", () => {
     list_tasks: "read",
     list_all_tasks: "read",
     get_task: "read",
+    get_project: "read",
     create_task: "additive",
+    create_project: "additive",
     update_task: "write",
     set_task_done: "write",
+    update_project: "write",
+    archive_project: "write",
+    delete_project: "delete",
   });
+});
+
+test("get_project validates id, fetches /projects/{id}, shapes the detail", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/projects/4");
+    return { data: { id: 4, title: "Work", parent_project_id: 0, is_archived: false }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "get_project").run({ project_id: 4 });
+  assert.equal(res.id, 4);
+  assert.equal(res.parent_project_id, null);
+});
+
+test("create_project PUTs title + optional description/parent and returns id/title", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/projects");
+    assert.deepEqual(body, { title: "New", description: "d", parent_project_id: 2 });
+    return { data: { id: 8, title: "New" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "create_project").run({
+    title: "  New  ",
+    description: "d",
+    parent_project_id: 2,
+  });
+  assert.deepEqual(res, { id: 8, title: "New" });
+});
+
+test("update_project fetch-merges current fields, overriding only the change", async () => {
+  const current = {
+    id: 4,
+    title: "Old",
+    description: "keep",
+    identifier: "OLD",
+    hex_color: "abc123",
+    parent_project_id: 2,
+    is_archived: false,
+    is_favorite: true,
+  };
+  let posted;
+  const api = async (method, path, body) => {
+    if (method === "GET") {
+      assert.equal(path, "/projects/4");
+      return { data: current, headers: headers() };
+    }
+    assert.equal(method, "POST");
+    assert.equal(path, "/projects/4");
+    posted = body;
+    return { data: { ...current, ...body }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "update_project").run({ project_id: 4, title: "Renamed" });
+  // title overridden; every other editable field preserved (no clobber)
+  assert.deepEqual(posted, {
+    title: "Renamed",
+    description: "keep",
+    identifier: "OLD",
+    hex_color: "abc123",
+    parent_project_id: 2,
+    is_archived: false,
+    is_favorite: true,
+  });
+  assert.equal(res.title, "Renamed");
+});
+
+test("update_project errors (without any api call) when no field is given", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "update_project").run({ project_id: 4 }),
+    /no fields to update/,
+  );
+  assert.equal(called, false, "must not even fetch when there is nothing to update");
+});
+
+test("archive_project fetch-merges and toggles is_archived, preserving the title", async () => {
+  const current = { id: 4, title: "P", description: "", parent_project_id: 0, is_archived: false };
+  const posted = [];
+  const api = async (method, path, body) => {
+    if (method === "GET") return { data: current, headers: headers() };
+    posted.push(body);
+    return { data: { ...current, is_archived: body.is_archived }, headers: headers() };
+  };
+  const tools = buildTools({ api });
+  assert.equal((await byName(tools, "archive_project").run({ project_id: 4 })).is_archived, true);
+  assert.equal((await byName(tools, "archive_project").run({ project_id: 4, archived: false })).is_archived, false);
+  assert.equal(posted[0].title, "P", "title carried through so Vikunja's non-empty check passes");
+  assert.equal(posted[0].is_archived, true);
+  assert.equal(posted[1].is_archived, false);
+});
+
+test("delete_project DELETEs and confirms", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/projects/4");
+    return { data: { message: "Successfully deleted." }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "delete_project").run({ project_id: 4 });
+  assert.deepEqual(res, { id: 4, deleted: true });
+});
+
+test("delete_project validates id before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "delete_project").run({ project_id: 0 }),
+    /positive integer/,
+  );
+  assert.equal(called, false);
 });
 
 test("get_task validates the id, fetches /tasks/{id}, and shapes the detail", async () => {
@@ -118,20 +237,26 @@ test("the real registration filter gates write/delete tiers behind their flags",
   // to prove the filter drops them by default and admits them per-flag.
   const registry = [
     ...buildTools({ api: noop }),
-    { name: "update_task", tier: "write" },
-    { name: "delete_task", tier: "delete" },
+    { name: "synthetic_write", tier: "write" },
+    { name: "synthetic_delete", tier: "delete" },
   ];
   const exposed = (gate) => registry.filter((t) => tierAllowed(t.tier, gate)).map((t) => t.name);
 
-  assert.deepEqual(
-    exposed({ allowWrite: false, allowDelete: false }).sort(),
-    ["create_task", "get_task", "list_all_tasks", "list_projects", "list_tasks"],
-    "default install exposes read+additive only",
-  );
-  assert.ok(exposed({ allowWrite: true, allowDelete: false }).includes("update_task"));
-  assert.ok(!exposed({ allowWrite: true, allowDelete: false }).includes("delete_task"));
-  assert.ok(exposed({ allowWrite: false, allowDelete: true }).includes("delete_task"));
-  assert.ok(!exposed({ allowWrite: false, allowDelete: true }).includes("update_task"));
+  const defaultSet = exposed({ allowWrite: false, allowDelete: false });
+  assert.ok(!defaultSet.includes("synthetic_write"), "write gated by default");
+  assert.ok(!defaultSet.includes("synthetic_delete"), "delete gated by default");
+  // every real default tool is read/additive
+  for (const t of buildTools({ api: noop })) {
+    if (t.tier === "read" || t.tier === "additive") {
+      assert.ok(defaultSet.includes(t.name), `${t.name} exposed by default`);
+    } else {
+      assert.ok(!defaultSet.includes(t.name), `${t.name} gated by default`);
+    }
+  }
+  assert.ok(exposed({ allowWrite: true, allowDelete: false }).includes("synthetic_write"));
+  assert.ok(!exposed({ allowWrite: true, allowDelete: false }).includes("synthetic_delete"));
+  assert.ok(exposed({ allowWrite: false, allowDelete: true }).includes("synthetic_delete"));
+  assert.ok(!exposed({ allowWrite: false, allowDelete: true }).includes("synthetic_write"));
 });
 
 test("list_projects maps items and shapes the paginated envelope from headers", async () => {

@@ -90,6 +90,28 @@ export function optionalDueDate(value) {
   return new Date(ts).toISOString();
 }
 
+export function optionalParentProjectId(value) {
+  if (value === undefined) return undefined;
+  const id = Number(value);
+  // 0 means "no parent" (top-level) in Vikunja; positive ids nest under a parent.
+  if (!Number.isInteger(id) || id < 0) {
+    throw new Error("parent_project_id must be a non-negative integer (0 = top level)");
+  }
+  return id;
+}
+
+export function projectDetail(p) {
+  return {
+    id: p.id,
+    title: p.title,
+    description: p.description ?? "",
+    identifier: p.identifier ?? "",
+    parent_project_id: p.parent_project_id ? p.parent_project_id : null,
+    is_archived: p.is_archived ?? false,
+    is_favorite: p.is_favorite ?? false,
+  };
+}
+
 export function optionalBoolean(value, name) {
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") {
