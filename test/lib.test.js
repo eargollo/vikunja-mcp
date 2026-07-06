@@ -23,6 +23,8 @@ import {
   optionalPriority,
   optionalDueDate,
   optionalBoolean,
+  optionalParentProjectId,
+  projectDetail,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -259,6 +261,42 @@ test("optionalBoolean requires a real boolean", () => {
   for (const bad of ["true", 1, 0, null]) {
     assert.throws(() => optionalBoolean(bad, "done"), /done must be a boolean/);
   }
+});
+
+test("optionalParentProjectId accepts 0 (top-level) and positive ints, rejects the rest", () => {
+  assert.equal(optionalParentProjectId(undefined), undefined);
+  assert.equal(optionalParentProjectId(0), 0);
+  assert.equal(optionalParentProjectId(7), 7);
+  assert.equal(optionalParentProjectId("3"), 3);
+  for (const bad of [-1, 1.5, "x"]) {
+    assert.throws(() => optionalParentProjectId(bad), /parent_project_id/, `should reject ${String(bad)}`);
+  }
+});
+
+test("projectDetail curates fields and nulls a zero parent", () => {
+  assert.deepEqual(
+    projectDetail({
+      id: 4,
+      title: "Work",
+      description: "d",
+      identifier: "WRK",
+      parent_project_id: 0,
+      is_archived: false,
+      is_favorite: true,
+      owner: { id: 1 },
+      secret: "drop",
+    }),
+    {
+      id: 4,
+      title: "Work",
+      description: "d",
+      identifier: "WRK",
+      parent_project_id: null,
+      is_archived: false,
+      is_favorite: true,
+    },
+  );
+  assert.equal(projectDetail({ id: 1, title: "x", parent_project_id: 9 }).parent_project_id, 9);
 });
 
 test("tierAllowed filters a synthetic tool list by env flags", () => {
