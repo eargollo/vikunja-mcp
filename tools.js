@@ -14,6 +14,10 @@ import {
   optionalFilter,
   optionalSortBy,
   optionalOrder,
+  optionalDescription,
+  optionalPriority,
+  optionalDueDate,
+  optionalBoolean,
   buildQuery,
   paginatedResult,
   taskDetail,
@@ -143,24 +147,97 @@ export function buildTools({ api }) {
     {
       name: "create_task",
       tier: "additive",
-      description: "Create a task with a title in a project (additive only).",
+      description:
+        "Create a task in a project. Requires a title; optional description, due_date (ISO 8601), and priority (0-5).",
       inputSchema: {
         type: "object",
         properties: {
           project_id: { type: "number", description: "Vikunja project id" },
           title: { type: "string", description: "Task title" },
+          description: { type: "string", description: "Task description" },
+          due_date: { type: "string", description: "Due date/time, ISO 8601 recommended (e.g. 2026-08-01T09:00:00Z)" },
+          priority: { type: "number", description: "Priority 0-5 (0 = unset, 5 = DO NOW)" },
         },
         required: ["project_id", "title"],
         additionalProperties: false,
       },
-      run: async ({ project_id, title }) => {
+      run: async ({ project_id, title, description, due_date, priority }) => {
         const id = requireProjectId(project_id);
-        const taskTitle = requireTitle(title);
-        const { data: task } = await api("PUT", `/projects/${id}/tasks`, { title: taskTitle });
+        const body = { title: requireTitle(title) };
+        const desc = optionalDescription(description);
+        if (desc !== undefined) body.description = desc;
+        const due = optionalDueDate(due_date);
+        if (due !== undefined) body.due_date = due;
+        const prio = optionalPriority(priority);
+        if (prio !== undefined) body.priority = prio;
+        const { data: task } = await api("PUT", `/projects/${id}/tasks`, body);
         if (!task || task.id == null) {
           throw new Error("Vikunja returned an empty task response");
         }
         return { id: task.id, title: task.title };
+      },
+    },
+    {
+      name: "update_task",
+      tier: "write",
+      description:
+        "Update fields of an existing task by id (title, description, done, due_date, priority). Only the fields you pass are changed.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          title: { type: "string", description: "New title" },
+          description: { type: "string", description: "New description" },
+          done: { type: "boolean", description: "Mark done/undone" },
+          due_date: { type: "string", description: "Due date/time, ISO 8601 recommended" },
+          priority: { type: "number", description: "Priority 0-5" },
+        },
+        required: ["task_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, title, description, done, due_date, priority }) => {
+        const id = requireTaskId(task_id);
+        const body = {};
+        if (title !== undefined) body.title = requireTitle(title);
+        const desc = optionalDescription(description);
+        if (desc !== undefined) body.description = desc;
+        const doneVal = optionalBoolean(done, "done");
+        if (doneVal !== undefined) body.done = doneVal;
+        const due = optionalDueDate(due_date);
+        if (due !== undefined) body.due_date = due;
+        const prio = optionalPriority(priority);
+        if (prio !== undefined) body.priority = prio;
+        if (Object.keys(body).length === 0) {
+          throw new Error("update_task: no fields to update");
+        }
+        const { data: task } = await api("POST", `/tasks/${id}`, body);
+        if (!task || task.id == null) {
+          throw new Error("Vikunja returned an empty task response");
+        }
+        return taskDetail(task);
+      },
+    },
+    {
+      name: "set_task_done",
+      tier: "write",
+      description: "Mark a task done, or reopen it with done=false (defaults to done=true).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          done: { type: "boolean", description: "true to complete (default), false to reopen" },
+        },
+        required: ["task_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, done }) => {
+        const id = requireTaskId(task_id);
+        const doneVal = done === undefined ? true : optionalBoolean(done, "done");
+        const { data: task } = await api("POST", `/tasks/${id}`, { done: doneVal });
+        if (!task || task.id == null) {
+          throw new Error("Vikunja returned an empty task response");
+        }
+        return taskDetail(task);
       },
     },
   ];

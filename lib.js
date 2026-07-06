@@ -61,6 +61,43 @@ export function optionalPerPage(value) {
   return perPage;
 }
 
+export function optionalDescription(value) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new Error("description must be a string");
+  }
+  return value; // empty string is allowed — it clears the description
+}
+
+export function optionalPriority(value) {
+  if (value === undefined) return undefined;
+  const priority = Number(value);
+  if (!Number.isInteger(priority) || priority < 0 || priority > 5) {
+    throw new Error("priority must be an integer between 0 and 5");
+  }
+  return priority;
+}
+
+export function optionalDueDate(value) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new Error("due_date must be an ISO 8601 date string");
+  }
+  const ts = Date.parse(value);
+  if (Number.isNaN(ts)) {
+    throw new Error("due_date must be an ISO 8601 date string");
+  }
+  return new Date(ts).toISOString();
+}
+
+export function optionalBoolean(value, name) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") {
+    throw new Error(`${name} must be a boolean`);
+  }
+  return value;
+}
+
 export function optionalFilter(value) {
   if (value === undefined) return undefined;
   if (typeof value !== "string") {

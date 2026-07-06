@@ -23,7 +23,7 @@ test("every tool declares a name, description, inputSchema, and known tier", () 
   }
 });
 
-test("the currently shipped tools are read/additive only", () => {
+test("each tool has the expected tier", () => {
   const tiers = Object.fromEntries(buildTools({ api: noop }).map((t) => [t.name, t.tier]));
   assert.deepEqual(tiers, {
     list_projects: "read",
@@ -31,6 +31,8 @@ test("the currently shipped tools are read/additive only", () => {
     list_all_tasks: "read",
     get_task: "read",
     create_task: "additive",
+    update_task: "write",
+    set_task_done: "write",
   });
 });
 
@@ -195,6 +197,84 @@ test("create_task trims the title, PUTs it, and returns id/title", async () => {
   };
   const res = await byName(buildTools({ api }), "create_task").run({ project_id: 5, title: "  Hello  " });
   assert.deepEqual(res, { id: 9, title: "Hello" });
+});
+
+test("create_task includes optional description/due_date/priority in the body", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/projects/5/tasks");
+    assert.deepEqual(body, {
+      title: "Hello",
+      description: "d",
+      due_date: "2026-08-01T00:00:00.000Z",
+      priority: 4,
+    });
+    return { data: { id: 9, title: "Hello" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "create_task").run({
+    project_id: 5,
+    title: "Hello",
+    description: "d",
+    due_date: "2026-08-01",
+    priority: 4,
+  });
+  assert.deepEqual(res, { id: 9, title: "Hello" });
+});
+
+test("update_task POSTs only the provided fields and returns the shaped detail", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "POST");
+    assert.equal(path, "/tasks/12");
+    assert.deepEqual(body, { priority: 5, done: true });
+    return { data: { id: 12, title: "T", done: true, project_id: 1, priority: 5 }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "update_task").run({ task_id: 12, priority: 5, done: true });
+  assert.equal(res.id, 12);
+  assert.equal(res.done, true);
+  assert.equal(res.priority, 5);
+});
+
+test("update_task rejects when no updatable field is supplied", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "update_task").run({ task_id: 12 }),
+    /no fields to update/,
+  );
+  assert.equal(called, false);
+});
+
+test("update_task validates task_id before touching the network", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "update_task").run({ task_id: -1, done: true }),
+    /positive integer/,
+  );
+  assert.equal(called, false);
+});
+
+test("set_task_done defaults to done=true and can reopen with done=false", async () => {
+  const seen = [];
+  const api = async (method, path, body) => {
+    seen.push([method, path, body]);
+    return { data: { id: 3, title: "T", done: body.done, project_id: 1 }, headers: headers() };
+  };
+  const tools = buildTools({ api });
+  const doneRes = await byName(tools, "set_task_done").run({ task_id: 3 });
+  assert.equal(doneRes.done, true);
+  const openRes = await byName(tools, "set_task_done").run({ task_id: 3, done: false });
+  assert.equal(openRes.done, false);
+  assert.deepEqual(seen, [
+    ["POST", "/tasks/3", { done: true }],
+    ["POST", "/tasks/3", { done: false }],
+  ]);
 });
 
 test("create_task rejects an empty title before calling the api", async () => {

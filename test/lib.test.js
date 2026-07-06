@@ -19,6 +19,10 @@ import {
   optionalSortBy,
   optionalOrder,
   taskDetail,
+  optionalDescription,
+  optionalPriority,
+  optionalDueDate,
+  optionalBoolean,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -221,6 +225,40 @@ test("taskDetail preserves zero priority/percent_done and defaults identifier to
   assert.equal(detail.priority, 0);
   assert.equal(detail.percent_done, 0);
   assert.equal(detail.identifier, "");
+});
+
+test("optionalDescription passes any string through (incl. empty), rejects non-strings", () => {
+  assert.equal(optionalDescription(undefined), undefined);
+  assert.equal(optionalDescription(""), "");
+  assert.equal(optionalDescription("multi\nline"), "multi\nline");
+  assert.throws(() => optionalDescription(5), /description must be a string/);
+});
+
+test("optionalPriority accepts integers 0-5, rejects out-of-range and non-integers", () => {
+  assert.equal(optionalPriority(undefined), undefined);
+  assert.equal(optionalPriority(0), 0);
+  assert.equal(optionalPriority(5), 5);
+  assert.equal(optionalPriority("3"), 3);
+  for (const bad of [-1, 6, 2.5, "x"]) {
+    assert.throws(() => optionalPriority(bad), /priority/, `should reject ${String(bad)}`);
+  }
+});
+
+test("optionalDueDate normalizes valid dates to ISO and rejects junk", () => {
+  assert.equal(optionalDueDate(undefined), undefined);
+  assert.equal(optionalDueDate("2026-08-01T09:00:00Z"), "2026-08-01T09:00:00.000Z");
+  assert.equal(optionalDueDate("2026-08-01"), "2026-08-01T00:00:00.000Z");
+  assert.throws(() => optionalDueDate("not a date"), /due_date/);
+  assert.throws(() => optionalDueDate(123), /due_date/);
+});
+
+test("optionalBoolean requires a real boolean", () => {
+  assert.equal(optionalBoolean(undefined, "done"), undefined);
+  assert.equal(optionalBoolean(true, "done"), true);
+  assert.equal(optionalBoolean(false, "done"), false);
+  for (const bad of ["true", 1, 0, null]) {
+    assert.throws(() => optionalBoolean(bad, "done"), /done must be a boolean/);
+  }
 });
 
 test("tierAllowed filters a synthetic tool list by env flags", () => {

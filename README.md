@@ -29,6 +29,8 @@ This one is the opposite:
 | `list_all_tasks` | read | `GET /tasks` |
 | `get_task` | read | `GET /tasks/{id}` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
+| `update_task` | write | `POST /tasks/{id}` |
+| `set_task_done` | write | `POST /tasks/{id}` |
 
 `list_projects`, `list_tasks`, and `list_all_tasks` support optional `page` and
 `per_page`. Responses include `{ page, total_pages, count, items }`; paginate by
@@ -39,7 +41,9 @@ size.
 `list_tasks` and `list_all_tasks` also take an optional `filter` (a Vikunja
 filter query like `done = false && priority >= 3`), `sort_by` (a field name), and
 `order_by` (`asc`/`desc`). `get_task` returns a task's full detail (description,
-dates, priority, percent_done, labels, assignees).
+dates, priority, percent_done, labels, assignees). `create_task` takes optional
+`description`, `due_date`, and `priority`. `update_task` (write) changes only
+the fields you pass; `set_task_done` (write) completes or reopens a task.
 
 Add tools deliberately — the tool list lives in the `buildTools` factory in
 `tools.js`, and `index.js` only exposes the tiers its env flags permit.
@@ -81,7 +85,7 @@ data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 | Projects — list, create | ✅ shipped |
 | Tasks — list, create | ✅ shipped |
 | Task detail & filtering (`get_task`, `list_all_tasks`, filter/sort) | ✅ shipped |
-| Rich task create & update | 🔜 [#6](https://github.com/eargollo/vikunja-mcp/issues/6) |
+| Rich task create & update (`update_task`, `set_task_done`, create fields) | ✅ shipped |
 | Projects — get, update, archive, delete | 🔜 [#7](https://github.com/eargollo/vikunja-mcp/issues/7) |
 | Labels | 🔜 [#8](https://github.com/eargollo/vikunja-mcp/issues/8) |
 | Assignees | 🔜 [#9](https://github.com/eargollo/vikunja-mcp/issues/9) |
