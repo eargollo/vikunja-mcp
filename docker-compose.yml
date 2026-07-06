@@ -1,0 +1,31 @@
+# Local test environment for vikunja-mcp.
+#
+# Brings up a single, throwaway Vikunja instance (SQLite, no external DB) so the
+# MCP server has something real to talk to. Storage is ephemeral — it lives in
+# the container's own writable layer, so `docker compose down` resets to a clean
+# slate. (No bind/named volumes: the image runs as uid 1000 and would hit
+# permission errors on a root-owned empty volume — and for a test box we want
+# throwaway data anyway.)
+#
+#   docker compose up -d      # start Vikunja on http://localhost:3456
+#   npm run bootstrap         # register a test user, write .env
+#   npm run smoke             # exercise the MCP tools end-to-end
+#   docker compose down       # stop and wipe all data
+
+services:
+  vikunja:
+    image: vikunja/vikunja:latest
+    container_name: vikunja-test
+    ports:
+      - "3456:3456"
+    environment:
+      VIKUNJA_SERVICE_PUBLICURL: "http://localhost:3456"
+      # Fixed secret so tokens survive container *restarts*. Test-only value.
+      VIKUNJA_SERVICE_SECRET: "vikunja-mcp-test-secret-do-not-use-in-prod"
+      VIKUNJA_SERVICE_ENABLEREGISTRATION: "true"
+      VIKUNJA_DATABASE_TYPE: "sqlite"
+      # /app/vikunja isn't writable by the image's uid-1000 user, so keep the
+      # ephemeral SQLite DB and file storage under world-writable /tmp.
+      VIKUNJA_DATABASE_PATH: "/tmp/vikunja/vikunja.db"
+      VIKUNJA_FILES_BASEPATH: "/tmp/vikunja/files"
+    restart: unless-stopped

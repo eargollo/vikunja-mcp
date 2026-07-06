@@ -88,6 +88,38 @@ sudo docker exec openclaw node dist/index.js mcp add vikunja \
 sudo docker exec openclaw node dist/index.js mcp probe vikunja --json
 ```
 
+## Tests
+
+Unit tests cover the pure helpers in `lib.js` (validation, query building,
+pagination shaping). They need nothing but Node 20+ — no Docker, no network:
+
+```bash
+npm test               # runs test/*.test.js; e2e self-skips when no Vikunja is configured
+```
+
+End-to-end tests drive the real MCP server over stdio against a live Vikunja.
+Bring one up with Docker (Node 20+ also required):
+
+```bash
+npm install            # once
+npm run up             # start Vikunja on http://localhost:3456 (SQLite, ephemeral)
+npm run bootstrap      # register a test user, log in, write .env
+npm run test:e2e       # list_projects -> create_task -> list_tasks + error paths, over MCP
+npm run down           # stop and wipe (data lives in the container, so this resets)
+```
+
+`bootstrap` writes a `.env` (gitignored) with `VIKUNJA_URL` and a bearer token.
+Run the server against it manually with `node --env-file=.env index.js`.
+
+Notes:
+
+- Storage is **ephemeral** — the SQLite DB and files live under `/tmp` inside the
+  container (the image's `/app/vikunja` isn't writable by its uid-1000 user).
+  `npm run down` gives you a clean slate.
+- The bootstrap uses the login **session JWT** as the bearer token — Vikunja
+  accepts it exactly where `index.js` sends `Bearer`, which keeps the test setup
+  simple. In production, use a scoped `tk_` API token instead (see Config above).
+
 ## License
 
 MIT

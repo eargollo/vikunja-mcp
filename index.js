@@ -17,65 +17,15 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-
-function requireAbsoluteUrl(value, name) {
-  let url;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error(`${name} must be an absolute URL (e.g. http://host:3456/api/v1)`);
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`${name} must use http or https`);
-  }
-  return url.toString().replace(/\/+$/, "");
-}
-
-function requireProjectId(value) {
-  const id = Number(value);
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("project_id must be a positive integer");
-  }
-  return id;
-}
-
-function requireTitle(value) {
-  if (typeof value !== "string") {
-    throw new Error("title must be a string");
-  }
-  const title = value.trim();
-  if (!title) {
-    throw new Error("title must not be empty");
-  }
-  return title;
-}
-
-function optionalPage(value) {
-  if (value === undefined) return undefined;
-  const page = Number(value);
-  if (!Number.isInteger(page) || page < 1) {
-    throw new Error("page must be a positive integer");
-  }
-  return page;
-}
-
-function optionalPerPage(value) {
-  if (value === undefined) return undefined;
-  const perPage = Number(value);
-  if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100) {
-    throw new Error("per_page must be an integer between 1 and 100");
-  }
-  return perPage;
-}
-
-function buildQuery(params) {
-  const search = new URLSearchParams();
-  for (const [key, val] of Object.entries(params)) {
-    if (val !== undefined) search.set(key, String(val));
-  }
-  const qs = search.toString();
-  return qs ? `?${qs}` : "";
-}
+import {
+  requireAbsoluteUrl,
+  requireProjectId,
+  requireTitle,
+  optionalPage,
+  optionalPerPage,
+  buildQuery,
+  paginatedResult,
+} from "./lib.js";
 
 const paginationSchema = {
   page: { type: "number", description: "Page number (default: 1)" },
@@ -128,20 +78,6 @@ async function api(method, path, body) {
     }
   }
   return { data, headers: res.headers };
-}
-
-function paginatedResult(items, page, perPage, headers) {
-  // Vikunja reports the authoritative page count in a response header; the
-  // frontend paginates off this too. Prefer it over guessing from page size,
-  // since Vikunja clamps per_page to its configured maximum server-side.
-  const totalPages = Number(headers?.get("x-pagination-total-pages"));
-  return {
-    page,
-    ...(perPage !== undefined ? { per_page: perPage } : {}),
-    ...(Number.isInteger(totalPages) && totalPages > 0 ? { total_pages: totalPages } : {}),
-    count: items.length,
-    items,
-  };
 }
 
 // Read + additive only. Add tools here deliberately; nothing is exposed by default.
