@@ -52,7 +52,8 @@ jobs:
           echo "node: $(node --version)"
           echo "npm:  $(npm --version)"
           echo "OIDC request url present: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
-          npm publish --access public
+          echo "registry: $(npm config get registry)"
+          npm publish --access public --loglevel verbose
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
