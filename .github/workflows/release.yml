@@ -28,10 +28,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      # NOTE: do NOT set registry-url here. It makes setup-node write an
+      # .npmrc with a placeholder auth token, which npm then tries to use
+      # instead of falling through to OIDC Trusted Publishing (→ 404). The
+      # default registry is npmjs.org already, and OIDC needs no token.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
           cache: npm
 
       - run: npm ci
