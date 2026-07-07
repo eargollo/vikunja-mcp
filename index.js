@@ -7,11 +7,13 @@
 //   - Every outbound request goes through the single api() function below, so
 //     there is exactly one place that can talk to the network, and it only ever
 //     talks to VIKUNJA_URL with your token.
-//   - READ + ADDITIVE tools by default (list + create). Write (update) and
-//     delete tools are opt-in via VIKUNJA_MCP_ALLOW_WRITE / _ALLOW_DELETE, so a
-//     default install — or a hijacked agent — can't modify or destroy anything.
+//   - READ + ADDITIVE tools by default (list + create). Write (update, access-
+//     granting, egress) and delete tools are opt-in via VIKUNJA_MCP_ALLOW_WRITE /
+//     _ALLOW_DELETE — a default install can't modify, share, exfiltrate, or
+//     destroy anything.
 //   - Credentials come from the environment, never hardcoded.
 
+import pkg from "./package.json" with { type: "json" };
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -35,20 +37,31 @@ if (!TOKEN) {
   process.exit(1);
 }
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 // The only network egress in the whole server: fixed base URL, fixed token,
 // JSON in/out (plus multipart FormData for file uploads). Nothing else reaches
 // out. FormData bodies are passed through untouched so fetch sets the multipart
 // Content-Type + boundary itself; everything else is JSON.
 async function api(method, path, body) {
   const isForm = body instanceof FormData;
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      ...(isForm ? {} : { "Content-Type": "application/json" }),
-    },
-    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        ...(isForm ? {} : { "Content-Type": "application/json" }),
+      },
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      throw new Error(`Vikunja ${method} ${path} -> request timed out after ${REQUEST_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  }
   const text = await res.text();
   if (!res.ok) {
     const detail = text.slice(0, 400);
@@ -81,7 +94,7 @@ const gate = {
 const TOOLS = buildTools({ api }).filter((t) => tierAllowed(t.tier, gate));
 
 const server = new Server(
-  { name: "vikunja-mcp", version: "0.1.0" },
+  { name: "vikunja-mcp", version: pkg.version },
   { capabilities: { tools: {} } },
 );
 
