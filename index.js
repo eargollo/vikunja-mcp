@@ -36,15 +36,18 @@ if (!TOKEN) {
 }
 
 // The only network egress in the whole server: fixed base URL, fixed token,
-// JSON in/out. Nothing else reaches out.
+// JSON in/out (plus multipart FormData for file uploads). Nothing else reaches
+// out. FormData bodies are passed through untouched so fetch sets the multipart
+// Content-Type + boundary itself; everything else is JSON.
 async function api(method, path, body) {
+  const isForm = body instanceof FormData;
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${TOKEN}`,
-      "Content-Type": "application/json",
+      ...(isForm ? {} : { "Content-Type": "application/json" }),
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
   });
   const text = await res.text();
   if (!res.ok) {

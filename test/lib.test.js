@@ -37,6 +37,9 @@ import {
   requireRelationKind,
   relationsShape,
   requirePositiveIntId,
+  requireFilename,
+  decodeBase64,
+  attachmentSummary,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -383,6 +386,40 @@ test("requireRelationKind accepts known kinds, rejects the rest", () => {
   for (const bad of ["friend", "", "RELATED", 5, null, undefined]) {
     assert.throws(() => requireRelationKind(bad), /relation_kind must be one of/, `reject ${String(bad)}`);
   }
+});
+
+test("requireFilename trims and requires a non-empty string", () => {
+  assert.equal(requireFilename("  note.txt  "), "note.txt");
+  for (const bad of ["", "   ", 5, null, undefined]) {
+    assert.throws(() => requireFilename(bad), /filename must not be empty/, `reject ${String(bad)}`);
+  }
+});
+
+test("decodeBase64 decodes valid base64 to bytes, rejects empty/invalid", () => {
+  const buf = decodeBase64(Buffer.from("hello").toString("base64"));
+  assert.equal(Buffer.from(buf).toString("utf8"), "hello");
+  // reject malformed base64 that Buffer.from would leniently half-decode
+  for (const bad of ["", "   ", "!!!", "aGVsbG8=extra", "not base64!!", 5, null, undefined]) {
+    assert.throws(() => decodeBase64(bad), /base64/, `reject ${String(bad)}`);
+  }
+});
+
+test("attachmentSummary curates id/name/size/mime/created from the nested file", () => {
+  assert.deepEqual(
+    attachmentSummary({
+      id: 3,
+      file: { name: "a.txt", size: 17, mime: "text/plain", secret: "x" },
+      created: "2026-01-01T00:00:00Z",
+    }),
+    { id: 3, name: "a.txt", size: 17, mime: "text/plain", created: "2026-01-01T00:00:00Z" },
+  );
+  assert.deepEqual(attachmentSummary({ id: 4 }), {
+    id: 4,
+    name: null,
+    size: null,
+    mime: null,
+    created: null,
+  });
 });
 
 test("relationsShape maps each kind's tasks to id/title/done, tolerates null", () => {

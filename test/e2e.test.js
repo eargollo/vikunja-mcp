@@ -84,10 +84,12 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "list_labels",
     "list_projects",
     "list_task_assignees",
+    "list_task_attachments",
     "list_task_comments",
     "list_task_relations",
     "list_tasks",
     "search_users",
+    "upload_task_attachment",
   ]);
   for (const gated of [
     "update_task",
@@ -99,6 +101,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "unassign_user",
     "delete_task_comment",
     "delete_task_relation",
+    "delete_task_attachment",
   ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
@@ -451,6 +454,45 @@ test("delete_task_relation is not callable without the delete flag", { skip }, a
     name: "delete_task_relation",
     arguments: { task_id: 1, other_task_id: 2, relation_kind: "related" },
   });
+  assert.ok(result.isError, "delete tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
+});
+
+test("upload_task_attachment, list_task_attachments, delete_task_attachment round-trip", { skip }, async () => {
+  const wc = await getWriteClient(); // delete_task_attachment is delete-tier
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const task = parse(
+    await client.callTool({
+      name: "create_task",
+      arguments: { project_id: projects.items[0].id, title: `e2e attach ${process.hrtime.bigint()}` },
+    }),
+  );
+  const filename = `note-${process.hrtime.bigint()}.txt`;
+  const content = Buffer.from("hello from e2e").toString("base64");
+  const up = parse(
+    await client.callTool({
+      name: "upload_task_attachment",
+      arguments: { task_id: task.id, filename, content_base64: content },
+    }),
+  );
+  assert.equal(up.uploaded.length, 1);
+  assert.equal(up.uploaded[0].name, filename);
+  assert.equal(up.uploaded[0].size, Buffer.byteLength("hello from e2e"));
+  const attId = up.uploaded[0].id;
+
+  const list = parse(await client.callTool({ name: "list_task_attachments", arguments: { task_id: task.id } }));
+  assert.ok(list.items.some((a) => a.id === attId), "attachment appears in list");
+
+  const del = parse(
+    await wc.callTool({ name: "delete_task_attachment", arguments: { task_id: task.id, attachment_id: attId } }),
+  );
+  assert.deepEqual(del, { task_id: task.id, attachment_id: attId, deleted: true });
+  const after = parse(await client.callTool({ name: "list_task_attachments", arguments: { task_id: task.id } }));
+  assert.ok(!after.items.some((a) => a.id === attId), "attachment removed");
+});
+
+test("delete_task_attachment is not callable without the delete flag", { skip }, async () => {
+  const result = await client.callTool({ name: "delete_task_attachment", arguments: { task_id: 1, attachment_id: 1 } });
   assert.ok(result.isError, "delete tool must be gated off by default");
   assert.match(result.content[0].text, /Unknown tool/);
 });
