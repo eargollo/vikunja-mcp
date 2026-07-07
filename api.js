@@ -92,6 +92,11 @@ export function makeApi({
       if (res.status >= 500) {
         throw new Error(`Vikunja ${method} ${path} -> ${res.status}: server error`);
       }
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(
+          `Vikunja ${method} ${path} -> ${res.status}: authentication failed — check VIKUNJA_API_TOKEN`,
+        );
+      }
       const detail = isSensitiveErrorPath(method, path) ? "request failed" : text.slice(0, 400);
       throw new Error(`Vikunja ${method} ${path} -> ${res.status}: ${detail}`);
     }
