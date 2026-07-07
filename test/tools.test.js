@@ -55,7 +55,86 @@ test("each tool has the expected tier", () => {
     list_task_attachments: "read",
     upload_task_attachment: "additive",
     delete_task_attachment: "delete",
+    list_buckets: "read",
+    create_bucket: "additive",
+    move_task_to_bucket: "write",
   });
+});
+
+// Buckets live under a project's kanban view; the tools auto-resolve it.
+function kanbanApi(handler) {
+  return async (method, path, body) => {
+    if (method === "GET" && path === "/projects/5/views") {
+      return { data: [{ id: 1, view_kind: "list" }, { id: 9, view_kind: "kanban" }], headers: new Headers() };
+    }
+    return handler(method, path, body);
+  };
+}
+
+test("list_buckets resolves the kanban view and lists its buckets", async () => {
+  const api = kanbanApi(async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/projects/5/views/9/buckets");
+    return { data: [{ id: 1, title: "To-Do", limit: 0, count: 2 }], headers: new Headers() };
+  });
+  const res = await byName(buildTools({ api }), "list_buckets").run({ project_id: 5 });
+  assert.deepEqual(res, {
+    project_id: 5,
+    view_id: 9,
+    buckets: [{ id: 1, title: "To-Do", limit: 0, count: 2 }],
+  });
+});
+
+test("create_bucket PUTs the title under the kanban view", async () => {
+  const api = kanbanApi(async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/projects/5/views/9/buckets");
+    assert.deepEqual(body, { title: "Doing" });
+    return { data: { id: 12, title: "Doing" }, headers: new Headers() };
+  });
+  const res = await byName(buildTools({ api }), "create_bucket").run({ project_id: 5, title: " Doing " });
+  assert.deepEqual(res, { id: 12, title: "Doing", view_id: 9 });
+});
+
+test("move_task_to_bucket POSTs { task_id } to the bucket's tasks endpoint", async () => {
+  const api = kanbanApi(async (method, path, body) => {
+    assert.equal(method, "POST");
+    assert.equal(path, "/projects/5/views/9/buckets/2/tasks");
+    assert.deepEqual(body, { task_id: 7 });
+    return { data: { bucket_id: 2, task_id: 7 }, headers: new Headers() };
+  });
+  const res = await byName(buildTools({ api }), "move_task_to_bucket").run({ project_id: 5, bucket_id: 2, task_id: 7 });
+  assert.deepEqual(res, { project_id: 5, view_id: 9, bucket_id: 2, task_id: 7, moved: true });
+});
+
+test("bucket tools resolve the FIRST kanban view when several exist", async () => {
+  const api = async (method, path) => {
+    if (path === "/projects/5/views") {
+      return {
+        data: [
+          { id: 1, view_kind: "list" },
+          { id: 4, view_kind: "kanban" },
+          { id: 7, view_kind: "kanban" },
+        ],
+        headers: new Headers(),
+      };
+    }
+    assert.equal(path, "/projects/5/views/4/buckets", "uses the first kanban view (id 4)");
+    return { data: [], headers: new Headers() };
+  };
+  const res = await byName(buildTools({ api }), "list_buckets").run({ project_id: 5 });
+  assert.equal(res.view_id, 4);
+});
+
+test("bucket tools error when the project has no kanban view", async () => {
+  const api = async (method, path) => {
+    if (path === "/projects/5/views") return { data: [{ id: 1, view_kind: "list" }], headers: new Headers() };
+    throw new Error("should not reach the bucket endpoint");
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "list_buckets").run({ project_id: 5 }),
+    /no kanban view/,
+  );
 });
 
 test("list_task_attachments maps attachments into the paginated envelope", async () => {

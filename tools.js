@@ -21,6 +21,7 @@ import {
   commentSummary,
   decodeBase64,
   attachmentSummary,
+  bucketSummary,
   RELATION_KINDS,
   requireRelationKind,
   relationsShape,
@@ -90,6 +91,19 @@ export function buildTools({ api }) {
       throw new Error("Vikunja returned an empty project response");
     }
     return projectDetail(project);
+  };
+
+  // Buckets live under a project's kanban view. Resolve it (the first kanban
+  // view, if a project somehow has several) so bucket tools take a project_id —
+  // agent-friendly — rather than a view id. Re-resolved per call rather than
+  // cached, to keep the server stateless; it's one extra GET per bucket op.
+  const kanbanViewId = async (projectId) => {
+    const { data: views } = await api("GET", `/projects/${projectId}/views`);
+    const kanban = (views ?? []).find((v) => v.view_kind === "kanban");
+    if (!kanban) {
+      throw new Error(`project ${projectId} has no kanban view`);
+    }
+    return kanban.id;
   };
 
   return [
@@ -773,6 +787,73 @@ export function buildTools({ api }) {
         const aid = requirePositiveIntId(attachment_id, "attachment_id");
         await api("DELETE", `/tasks/${tid}/attachments/${aid}`);
         return { task_id: tid, attachment_id: aid, deleted: true };
+      },
+    },
+    {
+      name: "list_buckets",
+      tier: "read",
+      description:
+        "List the kanban buckets of a project (id, title, task limit, task count). Resolves the project's first kanban view automatically.",
+      inputSchema: {
+        type: "object",
+        properties: { project_id: { type: "number", description: "Vikunja project id" } },
+        required: ["project_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id }) => {
+        const pid = requireProjectId(project_id);
+        const viewId = await kanbanViewId(pid);
+        const { data } = await api("GET", `/projects/${pid}/views/${viewId}/buckets`);
+        return { project_id: pid, view_id: viewId, buckets: (data ?? []).map(bucketSummary) };
+      },
+    },
+    {
+      name: "create_bucket",
+      tier: "additive",
+      description: "Create a kanban bucket (column) in a project's kanban view.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "number", description: "Vikunja project id" },
+          title: { type: "string", description: "Bucket title" },
+        },
+        required: ["project_id", "title"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, title }) => {
+        const pid = requireProjectId(project_id);
+        const bucketTitle = requireTitle(title);
+        const viewId = await kanbanViewId(pid);
+        const { data: bucket } = await api("PUT", `/projects/${pid}/views/${viewId}/buckets`, {
+          title: bucketTitle,
+        });
+        if (!bucket || bucket.id == null) {
+          throw new Error("Vikunja returned an empty bucket response");
+        }
+        return { id: bucket.id, title: bucket.title, view_id: viewId };
+      },
+    },
+    {
+      name: "move_task_to_bucket",
+      tier: "write",
+      description: "Move a task into a kanban bucket (column) of its project's kanban view.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "number", description: "Vikunja project id" },
+          bucket_id: { type: "number", description: "Target bucket id (see list_buckets)" },
+          task_id: { type: "number", description: "Task to move" },
+        },
+        required: ["project_id", "bucket_id", "task_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, bucket_id, task_id }) => {
+        const pid = requireProjectId(project_id);
+        const bid = requirePositiveIntId(bucket_id, "bucket_id");
+        const tid = requireTaskId(task_id);
+        const viewId = await kanbanViewId(pid);
+        await api("POST", `/projects/${pid}/views/${viewId}/buckets/${bid}/tasks`, { task_id: tid });
+        return { project_id: pid, view_id: viewId, bucket_id: bid, task_id: tid, moved: true };
       },
     },
   ];
