@@ -506,9 +506,11 @@ export function requirePositiveIntIdArray(value, name) {
 }
 
 // Human-readable MCP tool title from snake_case name (e.g. list_projects → List Projects).
+// Drops empty segments so leading/doubled underscores never yield edge/doubled spaces.
 export function toolDisplayTitle(name) {
-  return name
+  return String(name)
     .split("_")
+    .filter((part) => part.length > 0)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 }

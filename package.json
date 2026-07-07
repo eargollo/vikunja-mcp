@@ -39,7 +39,7 @@
   "scripts": {
     "start": "node index.js",
     "test": "node --test",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**'",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-lines=88 --test-coverage-branches=80 --test-coverage-functions=85",
     "test:e2e": "node --env-file=.env --test test/e2e.test.js",
     "up": "docker compose up -d",
     "down": "docker compose down",

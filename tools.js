@@ -1213,7 +1213,8 @@ export function buildTools({ api, base }) {
     {
       name: "toggle_team_member_admin",
       tier: "write",
-      description: "Toggle a team member's admin status (Vikunja flips the current value).",
+      description:
+        "Toggle a team member's admin status (Vikunja flips the current value). Call get_team afterward to read the resulting admin state.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1308,15 +1309,25 @@ export function buildTools({ api, base }) {
       name: "list_saved_filters",
       tier: "read",
       description:
-        "List saved filters (id, title). Vikunja has no filters list endpoint — these are read from the projects list, where saved filters appear as negative-id pseudo-projects, so a very large number of projects could page some out.",
+        "List saved filters (id, title). Vikunja has no filters list endpoint — these are read from the projects list, where saved filters appear as negative-id pseudo-projects. All pages of projects are scanned so none are missed.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       run: async () => {
-        const { data } = await api("GET", "/projects");
-        // filter_id = -project_id - 1 is an undocumented v2.3.0 internal for how
-        // saved filters are encoded as pseudo-projects — re-verify on upgrades.
-        const filters = (data ?? [])
-          .filter((p) => p.id < 0)
-          .map((p) => ({ id: -p.id - 1, title: p.title }));
+        // Saved filters surface as negative-id pseudo-projects scattered through
+        // the paginated projects list, so page through every page to find them
+        // all. filter_id = -project_id - 1 is an undocumented v2.3.0 internal —
+        // re-verify on upgrades. The 1000-page cap bounds a pathological server.
+        const filters = [];
+        let totalPages = 1;
+        for (let page = 1; page <= totalPages && page <= 1000; page += 1) {
+          const { data, headers } = await api("GET", `/projects${buildQuery({ page })}`);
+          for (const p of data ?? []) {
+            if (typeof p.id === "number" && p.id < 0) {
+              filters.push({ id: -p.id - 1, title: p.title });
+            }
+          }
+          const tp = Number(headers?.get("x-pagination-total-pages"));
+          if (Number.isInteger(tp) && tp > 0) totalPages = tp;
+        }
         return listResult(filters);
       },
     },
