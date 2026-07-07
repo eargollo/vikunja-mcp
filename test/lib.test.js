@@ -20,6 +20,11 @@ import {
   SERVER_INSTRUCTIONS,
   requireNodeMinVersion,
   MAX_UPLOAD_BYTES,
+  toolDisplayTitle,
+  requireTeamId,
+  teamDetail,
+  caldavBaseFromApiUrl,
+  requirePositiveIntIdArray,
   requireTaskId,
   optionalFilter,
   optionalSortBy,
@@ -622,6 +627,28 @@ test("SERVER_INSTRUCTIONS explains default gating", () => {
   assert.match(SERVER_INSTRUCTIONS, /read and additive/);
   assert.match(SERVER_INSTRUCTIONS, /VIKUNJA_MCP_ALLOW_WRITE/);
   assert.match(SERVER_INSTRUCTIONS, /VIKUNJA_MCP_ALLOW_DELETE/);
+});
+
+test("toolDisplayTitle converts snake_case tool names", () => {
+  assert.equal(toolDisplayTitle("list_projects"), "List Projects");
+  assert.equal(toolDisplayTitle("delete_caldav_token"), "Delete Caldav Token");
+});
+
+test("caldavBaseFromApiUrl derives the /dav origin from the API base", () => {
+  assert.equal(caldavBaseFromApiUrl("http://localhost:3456/api/v1"), "http://localhost:3456/dav");
+});
+
+test("requirePositiveIntIdArray validates non-empty id lists", () => {
+  assert.deepEqual(requirePositiveIntIdArray([1, "2"], "task_ids"), [1, 2]);
+  assert.throws(() => requirePositiveIntIdArray([], "task_ids"), /non-empty/);
+});
+
+test("teamDetail shapes id/name/members", () => {
+  assert.deepEqual(teamDetail({ id: 1, name: "Squad", members: [{ id: 2, username: "a", admin: true }] }), {
+    id: 1,
+    name: "Squad",
+    members: [{ id: 2, username: "a", admin: true }],
+  });
 });
 
 test("decodeBase64 rejects payloads above MAX_UPLOAD_BYTES", () => {

@@ -12,6 +12,7 @@
     "lib.js",
     "tools.js",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "repository": {

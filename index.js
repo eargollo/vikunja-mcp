@@ -28,6 +28,7 @@ import {
   tierAnnotations,
   SERVER_INSTRUCTIONS,
   requireNodeMinVersion,
+  toolDisplayTitle,
 } from "./lib.js";
 import { buildTools } from "./tools.js";
 
@@ -63,7 +64,7 @@ const gate = {
 };
 
 // Tools are defined in tools.js with an injected api(); gate by tier here.
-const TOOLS = buildTools({ api }).filter((t) => tierAllowed(t.tier, gate));
+const TOOLS = buildTools({ api, base: BASE }).filter((t) => tierAllowed(t.tier, gate));
 
 const server = new Server(
   { name: "vikunja-mcp", version: pkg.version, instructions: SERVER_INSTRUCTIONS },
@@ -73,6 +74,7 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: TOOLS.map(({ name, description, inputSchema, tier }) => ({
     name,
+    title: toolDisplayTitle(name),
     description,
     inputSchema,
     annotations: tierAnnotations(tier, name),
