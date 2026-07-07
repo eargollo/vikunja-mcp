@@ -8,7 +8,9 @@
 import {
   requireProjectId,
   requireTaskId,
+  requireLabelId,
   requireTitle,
+  optionalHexColor,
   optionalPage,
   optionalPerPage,
   optionalFilter,
@@ -385,6 +387,94 @@ export function buildTools({ api }) {
         const id = requireProjectId(project_id);
         await api("DELETE", `/projects/${id}`);
         return { id, deleted: true };
+      },
+    },
+    {
+      name: "list_labels",
+      tier: "read",
+      description:
+        "List the labels the token can see (id, title, hex_color). Paginated; request successive pages while page < total_pages.",
+      inputSchema: {
+        type: "object",
+        properties: paginationSchema,
+        additionalProperties: false,
+      },
+      run: async ({ page, per_page } = {}) => {
+        const resolvedPage = optionalPage(page);
+        const resolvedPerPage = optionalPerPage(per_page);
+        const query = buildQuery({ page: resolvedPage, per_page: resolvedPerPage });
+        const { data, headers } = await api("GET", `/labels${query}`);
+        const items = (data ?? []).map((l) => ({ id: l.id, title: l.title, hex_color: l.hex_color ?? "" }));
+        return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
+      },
+    },
+    {
+      name: "create_label",
+      tier: "additive",
+      description: "Create a label. Requires a title; optional hex_color (6-digit hex like ff0000).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Label title" },
+          hex_color: { type: "string", description: "6-digit hex color, e.g. ff0000 (leading # allowed)" },
+        },
+        required: ["title"],
+        additionalProperties: false,
+      },
+      run: async ({ title, hex_color }) => {
+        const body = { title: requireTitle(title) };
+        const hex = optionalHexColor(hex_color);
+        if (hex !== undefined) body.hex_color = hex;
+        const { data: label } = await api("PUT", "/labels", body);
+        if (!label || label.id == null) {
+          throw new Error("Vikunja returned an empty label response");
+        }
+        return { id: label.id, title: label.title, hex_color: label.hex_color ?? "" };
+      },
+    },
+    {
+      name: "add_label_to_task",
+      tier: "additive",
+      description: "Attach an existing label to a task.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          label_id: { type: "number", description: "Vikunja label id" },
+        },
+        required: ["task_id", "label_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, label_id }) => {
+        const tid = requireTaskId(task_id);
+        const lid = requireLabelId(label_id);
+        await api("PUT", `/tasks/${tid}/labels`, { label_id: lid });
+        return { task_id: tid, label_id: lid, added: true };
+      },
+    },
+    {
+      name: "remove_label_from_task",
+      // Tier taxonomy: any HTTP DELETE / association-removal is classified
+      // `delete` and gated behind ALLOW_DELETE. Detach is reversible (re-attach
+      // restores it), so `write` would also be defensible, but we err toward the
+      // stricter gate for anything that removes state. Same shape recurs for
+      // assignees/comments/relations — keep them `delete` for consistency.
+      tier: "delete",
+      description: "Detach a label from a task.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          label_id: { type: "number", description: "Vikunja label id" },
+        },
+        required: ["task_id", "label_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, label_id }) => {
+        const tid = requireTaskId(task_id);
+        const lid = requireLabelId(label_id);
+        await api("DELETE", `/tasks/${tid}/labels/${lid}`);
+        return { task_id: tid, label_id: lid, removed: true };
       },
     },
   ];

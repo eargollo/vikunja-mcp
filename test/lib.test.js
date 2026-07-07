@@ -25,6 +25,8 @@ import {
   optionalBoolean,
   optionalParentProjectId,
   projectDetail,
+  requireLabelId,
+  optionalHexColor,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -297,6 +299,24 @@ test("projectDetail curates fields and nulls a zero parent", () => {
     },
   );
   assert.equal(projectDetail({ id: 1, title: "x", parent_project_id: 9 }).parent_project_id, 9);
+});
+
+test("requireLabelId accepts positive integers, rejects the rest", () => {
+  assert.equal(requireLabelId(1), 1);
+  assert.equal(requireLabelId("42"), 42);
+  for (const bad of [0, -1, 1.5, "x", null, undefined]) {
+    assert.throws(() => requireLabelId(bad), /label_id must be a positive integer/, `reject ${String(bad)}`);
+  }
+});
+
+test("optionalHexColor normalizes to 6 lowercase hex digits, strips '#', rejects junk", () => {
+  assert.equal(optionalHexColor(undefined), undefined);
+  assert.equal(optionalHexColor("ff0000"), "ff0000");
+  assert.equal(optionalHexColor("#FF0000"), "ff0000");
+  assert.equal(optionalHexColor("AbCdEf"), "abcdef");
+  for (const bad of ["abc", "gggggg", "#12345", "1234567", 123]) {
+    assert.throws(() => optionalHexColor(bad), /hex_color/, `reject ${String(bad)}`);
+  }
 });
 
 test("tierAllowed filters a synthetic tool list by env flags", () => {
