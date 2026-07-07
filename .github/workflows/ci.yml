@@ -23,8 +23,8 @@ jobs:
             exit 1
           fi
       # Pure helpers only — no Docker, no network. The e2e file self-skips here
-      # because VIKUNJA_URL / VIKUNJA_API_TOKEN aren't set. Coverage report is
-      # printed to the job log.
+      # because VIKUNJA_URL / VIKUNJA_API_TOKEN aren't set. Fails the build if
+      # coverage drops below the thresholds in the test:coverage script.
       - run: npm run test:coverage
 
   e2e:

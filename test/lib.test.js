@@ -637,6 +637,13 @@ test("toolDisplayTitle converts snake_case tool names", () => {
   assert.equal(toolDisplayTitle("delete_caldav_token"), "Delete Caldav Token");
 });
 
+test("toolDisplayTitle drops empty segments (no edge/doubled spaces)", () => {
+  assert.equal(toolDisplayTitle(""), "");
+  assert.equal(toolDisplayTitle("_leading"), "Leading");
+  assert.equal(toolDisplayTitle("a__b"), "A B");
+  assert.equal(toolDisplayTitle("trailing_"), "Trailing");
+});
+
 test("requireNodeMinVersion accepts the current runtime and rejects an impossible floor", () => {
   assert.doesNotThrow(() => requireNodeMinVersion(20));
   assert.throws(() => requireNodeMinVersion(999), /requires Node\.js >= 999/);
@@ -663,4 +670,12 @@ test("decodeBase64 rejects payloads above MAX_UPLOAD_BYTES", () => {
   const big = Buffer.alloc(MAX_UPLOAD_BYTES + 1, 1);
   const encoded = big.toString("base64");
   assert.throws(() => decodeBase64(encoded), /exceeds maximum size/);
+});
+
+test("decodeBase64 short-circuits on encoded length before decoding (custom cap)", () => {
+  // maxBytes=3 → encoded cap of 4 chars; a longer valid base64 string trips the
+  // pre-check without allocating the decoded buffer.
+  const encoded = Buffer.from("hello world").toString("base64");
+  assert.ok(encoded.length > 4);
+  assert.throws(() => decodeBase64(encoded, "content_base64", 3), /exceeds maximum size/);
 });

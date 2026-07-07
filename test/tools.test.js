@@ -296,20 +296,27 @@ test("unsubscribe DELETEs /subscriptions/{entity}/{id} and confirms", async () =
   assert.deepEqual(res, { ok: true, entity: "project", entity_id: 4 });
 });
 
-test("list_saved_filters extracts negative-id projects and maps to filter ids", async () => {
+test("list_saved_filters pages through all projects and maps negative ids to filter ids", async () => {
+  // Two pages of projects; the saved filters (negative ids) are split across
+  // them, so a single-page read would miss F2. Assert both are found.
+  const pages = {
+    "/projects?page=1": {
+      data: [{ id: 5, title: "Real project" }, { id: -3, title: "F1" }],
+      headers: headers({ "x-pagination-total-pages": "2" }),
+    },
+    "/projects?page=2": {
+      data: [{ id: 7, title: "Another" }, { id: -4, title: "F2" }],
+      headers: headers({ "x-pagination-total-pages": "2" }),
+    },
+  };
+  const seen = [];
   const api = async (method, path) => {
     assert.equal(method, "GET");
-    assert.equal(path, "/projects");
-    return {
-      data: [
-        { id: 5, title: "Real project" },
-        { id: -3, title: "F1" },
-        { id: -4, title: "F2" },
-      ],
-      headers: headers(),
-    };
+    seen.push(path);
+    return pages[path];
   };
   const res = await byName(buildTools({ api, base: TEST_BASE }), "list_saved_filters").run({});
+  assert.deepEqual(seen, ["/projects?page=1", "/projects?page=2"]);
   // filter_id = -project_id - 1  →  -3 => 2, -4 => 3
   assert.deepEqual(res, { count: 2, items: [{ id: 2, title: "F1" }, { id: 3, title: "F2" }] });
 });
