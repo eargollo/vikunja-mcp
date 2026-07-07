@@ -41,6 +41,7 @@ import {
   decodeBase64,
   attachmentSummary,
   bucketSummary,
+  optionalPermission,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -402,6 +403,14 @@ test("decodeBase64 decodes valid base64 to bytes, rejects empty/invalid", () => 
   // reject malformed base64 that Buffer.from would leniently half-decode
   for (const bad of ["", "   ", "!!!", "aGVsbG8=extra", "not base64!!", 5, null, undefined]) {
     assert.throws(() => decodeBase64(bad), /base64/, `reject ${String(bad)}`);
+  }
+});
+
+test("optionalPermission accepts 0/1/2, rejects out-of-range and non-integers", () => {
+  assert.equal(optionalPermission(undefined), undefined);
+  for (const ok of [0, 1, 2, "2"]) assert.equal(optionalPermission(ok), Number(ok));
+  for (const bad of [-1, 3, 1.5, "x"]) {
+    assert.throws(() => optionalPermission(bad), /permission must be/, `reject ${String(bad)}`);
   }
 });
 

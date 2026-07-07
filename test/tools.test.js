@@ -58,7 +58,85 @@ test("each tool has the expected tier", () => {
     list_buckets: "read",
     create_bucket: "additive",
     move_task_to_bucket: "write",
+    list_teams: "read",
+    create_team: "additive",
+    share_project_with_user: "additive",
+    share_project_with_team: "additive",
+    create_link_share: "additive",
   });
+});
+
+test("list_teams maps id/name into the paginated envelope", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/teams");
+    return { data: [{ id: 1, name: "Squad", extra: "drop" }], headers: headers({ "x-pagination-total-pages": "1" }) };
+  };
+  const res = await byName(buildTools({ api }), "list_teams").run({});
+  assert.deepEqual(res.items, [{ id: 1, name: "Squad" }]);
+});
+
+test("create_team PUTs the name and returns id/name", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/teams");
+    assert.deepEqual(body, { name: "Squad" });
+    return { data: { id: 3, name: "Squad" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "create_team").run({ name: " Squad " });
+  assert.deepEqual(res, { id: 3, name: "Squad" });
+});
+
+test("share_project_with_user PUTs { user_id, permission } (default read)", async () => {
+  const seen = [];
+  const api = async (method, path, body) => {
+    seen.push([method, path, body]);
+    return { data: { user_id: body.user_id, permission: body.permission }, headers: headers() };
+  };
+  const tools = buildTools({ api });
+  const def = await byName(tools, "share_project_with_user").run({ project_id: 4, user_id: 9 });
+  assert.deepEqual(def, { project_id: 4, user_id: 9, permission: 0, shared: true });
+  const rw = await byName(tools, "share_project_with_user").run({ project_id: 4, user_id: 9, permission: 1 });
+  assert.equal(rw.permission, 1);
+  assert.deepEqual(seen, [
+    ["PUT", "/projects/4/users", { user_id: 9, permission: 0 }],
+    ["PUT", "/projects/4/users", { user_id: 9, permission: 1 }],
+  ]);
+});
+
+test("share_project_with_team PUTs { team_id, permission }", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/projects/4/teams");
+    assert.deepEqual(body, { team_id: 2, permission: 2 });
+    return { data: { team_id: 2, permission: 2 }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "share_project_with_team").run({ project_id: 4, team_id: 2, permission: 2 });
+  assert.deepEqual(res, { project_id: 4, team_id: 2, permission: 2, shared: true });
+});
+
+test("create_link_share PUTs { permission } and returns the hash", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/projects/4/shares");
+    assert.deepEqual(body, { permission: 0 });
+    return { data: { id: 1, hash: "abc123", permission: 0 }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "create_link_share").run({ project_id: 4 });
+  assert.deepEqual(res, { project_id: 4, hash: "abc123", permission: 0 });
+});
+
+test("share tools reject an invalid permission before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "share_project_with_team").run({ project_id: 4, team_id: 2, permission: 5 }),
+    /permission must be/,
+  );
+  assert.equal(called, false);
 });
 
 // Buckets live under a project's kanban view; the tools auto-resolve it.

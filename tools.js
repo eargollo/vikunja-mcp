@@ -35,6 +35,7 @@ import {
   optionalDueDate,
   optionalBoolean,
   optionalParentProjectId,
+  optionalPermission,
   buildQuery,
   paginatedResult,
   taskDetail,
@@ -46,6 +47,14 @@ const paginationSchema = {
   per_page: {
     type: "number",
     description: "Items per page, 1-100 (Vikunja default if omitted)",
+  },
+};
+
+const permissionSchema = {
+  permission: {
+    type: "number",
+    description: "Access level: 0 read (default), 1 read+write, 2 admin",
+    enum: [0, 1, 2],
   },
 };
 
@@ -854,6 +863,111 @@ export function buildTools({ api }) {
         const viewId = await kanbanViewId(pid);
         await api("POST", `/projects/${pid}/views/${viewId}/buckets/${bid}/tasks`, { task_id: tid });
         return { project_id: pid, view_id: viewId, bucket_id: bid, task_id: tid, moved: true };
+      },
+    },
+    {
+      name: "list_teams",
+      tier: "read",
+      description:
+        "List the teams the token can see (id, name). Paginated; request successive pages while page < total_pages.",
+      inputSchema: { type: "object", properties: paginationSchema, additionalProperties: false },
+      run: async ({ page, per_page } = {}) => {
+        const resolvedPage = optionalPage(page);
+        const resolvedPerPage = optionalPerPage(per_page);
+        const query = buildQuery({ page: resolvedPage, per_page: resolvedPerPage });
+        const { data, headers } = await api("GET", `/teams${query}`);
+        const items = (data ?? []).map((t) => ({ id: t.id, name: t.name }));
+        return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
+      },
+    },
+    {
+      name: "create_team",
+      tier: "additive",
+      description: "Create a team.",
+      inputSchema: {
+        type: "object",
+        properties: { name: { type: "string", description: "Team name" } },
+        required: ["name"],
+        additionalProperties: false,
+      },
+      run: async ({ name }) => {
+        const teamName = requireTitle(name);
+        const { data: team } = await api("PUT", "/teams", { name: teamName });
+        if (!team || team.id == null) {
+          throw new Error("Vikunja returned an empty team response");
+        }
+        return { id: team.id, name: team.name };
+      },
+    },
+    {
+      name: "share_project_with_user",
+      tier: "additive",
+      description: "Share a project with a user at a permission level (default read).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "number", description: "Vikunja project id" },
+          user_id: { type: "number", description: "Vikunja user id (see search_users)" },
+          ...permissionSchema,
+        },
+        required: ["project_id", "user_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, user_id, permission }) => {
+        const pid = requireProjectId(project_id);
+        const uid = requireUserId(user_id);
+        const perm = optionalPermission(permission) ?? 0;
+        // Report the permission Vikunja actually set (falling back to requested)
+        // so a silently-downgraded grant is visible — consistent across the
+        // three share tools.
+        const { data } = await api("PUT", `/projects/${pid}/users`, { user_id: uid, permission: perm });
+        return { project_id: pid, user_id: uid, permission: data?.permission ?? perm, shared: true };
+      },
+    },
+    {
+      name: "share_project_with_team",
+      tier: "additive",
+      description: "Share a project with a team at a permission level (default read).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "number", description: "Vikunja project id" },
+          team_id: { type: "number", description: "Vikunja team id (see list_teams)" },
+          ...permissionSchema,
+        },
+        required: ["project_id", "team_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, team_id, permission }) => {
+        const pid = requireProjectId(project_id);
+        const tmid = requirePositiveIntId(team_id, "team_id");
+        const perm = optionalPermission(permission) ?? 0;
+        const { data } = await api("PUT", `/projects/${pid}/teams`, { team_id: tmid, permission: perm });
+        return { project_id: pid, team_id: tmid, permission: data?.permission ?? perm, shared: true };
+      },
+    },
+    {
+      name: "create_link_share",
+      tier: "additive",
+      description:
+        "Create a shareable link for a project at a permission level (default read). Returns the share hash — a capability secret that grants that access to anyone who has it, so treat it as sensitive.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "number", description: "Vikunja project id" },
+          ...permissionSchema,
+        },
+        required: ["project_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, permission }) => {
+        const pid = requireProjectId(project_id);
+        const perm = optionalPermission(permission) ?? 0;
+        const { data: share } = await api("PUT", `/projects/${pid}/shares`, { permission: perm });
+        if (!share || share.hash == null) {
+          throw new Error("Vikunja returned an empty share response");
+        }
+        return { project_id: pid, hash: share.hash, permission: share.permission ?? perm };
       },
     },
   ];
