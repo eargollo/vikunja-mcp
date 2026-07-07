@@ -9,8 +9,10 @@ The available third-party Vikunja MCP servers pull a dozen-plus dependencies fro
 npm at runtime and run inside the agent's container with access to its secrets.
 This one is the opposite:
 
-- **One dependency** — the official `@modelcontextprotocol/sdk`. All HTTP uses
-  Node's built-in `fetch`. No API client libs, no transitive surface.
+- **One direct dependency** — the official `@modelcontextprotocol/sdk`. All HTTP
+  uses Node's built-in `fetch`; this project adds no API-client libs of its own.
+  The only transitive dependencies are the SDK's, and the stdio transport used
+  here never loads its HTTP/OAuth stack.
 - **One egress point** — every request goes through `makeApi()` in `api.js`
   that only ever calls `VIKUNJA_URL` with your token. Grep it; that's the whole
   network surface.
@@ -23,6 +25,9 @@ This one is the opposite:
 - **No build step** — plain Node ESM, `node index.js`.
 
 ## Tools
+
+Grouped by permission tier (read + additive are always on; write and delete are
+opt-in — see [Config](#config)):
 
 | Tool | Effect | Endpoint |
 | --- | --- | --- |
@@ -39,11 +44,13 @@ This one is the opposite:
 | `list_task_attachments` | read | `GET /tasks/{id}/attachments` |
 | `list_buckets` | read | `GET /projects/{id}/views/{view}/buckets` |
 | `list_teams` | read | `GET /teams` |
+| `get_team` | read | `GET /teams/{id}` |
 | `list_saved_filters` | read | `GET /projects` (negative ids) |
 | `list_notifications` | read | `GET /notifications` |
 | `get_current_user` | read | `GET /user` |
 | `list_api_tokens` | read | `GET /tokens` |
 | `list_webhooks` | read | `GET /projects/{id}/webhooks` |
+| `get_caldav_info` | read | `GET /user` (+ CalDAV connection info) |
 | `create_project` | additive | `PUT /projects` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 | `add_label_to_task` | additive | `PUT /tasks/{id}/labels` |
@@ -52,32 +59,47 @@ This one is the opposite:
 | `create_task_relation` | additive | `PUT /tasks/{id}/relations` |
 | `upload_task_attachment` | additive | `PUT /tasks/{id}/attachments` |
 | `create_bucket` | additive | `PUT /projects/{id}/views/{view}/buckets` |
-| `update_task` | write | `POST /tasks/{id}` |
 | `create_team` | additive | `PUT /teams` |
+| `add_team_member` | additive | `PUT /teams/{id}/members` |
+| `create_label` | additive | `PUT /labels` |
+| `create_saved_filter` | additive | `PUT /filters` |
+| `subscribe` | additive | `PUT /subscriptions/{entity}/{id}` |
+| `update_task` | write | `POST /tasks/{id}` |
+| `set_task_done` | write | `POST /tasks/{id}` |
+| `bulk_update_tasks` | write | `POST /tasks/bulk` |
+| `set_task_labels` | write | `POST /tasks/{id}/labels/bulk` |
+| `set_task_assignees` | write | `POST /tasks/{id}/assignees/bulk` |
+| `update_project` | write | `POST /projects/{id}` |
+| `archive_project` | write | `POST /projects/{id}` |
+| `update_task_comment` | write | `POST /tasks/{id}/comments/{commentId}` |
+| `update_label` | write | `POST /labels/{id}` |
+| `update_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucketId}` |
+| `move_task_to_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucket_id}/tasks` |
+| `update_team` | write | `POST /teams/{id}` |
+| `toggle_team_member_admin` | write | `POST /teams/{id}/members/{userId}/admin` |
 | `share_project_with_user` | write | `PUT /projects/{id}/users` |
 | `share_project_with_team` | write | `PUT /projects/{id}/teams` |
 | `create_link_share` | write | `PUT /projects/{id}/shares` |
-| `create_saved_filter` | additive | `PUT /filters` |
-| `subscribe` | additive | `PUT /subscriptions/{entity}/{id}` |
 | `create_webhook` | write | `PUT /projects/{id}/webhooks` |
-| `move_task_to_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucket_id}/tasks` |
+| `update_webhook` | write | `POST /projects/{id}/webhooks/{webhookId}` |
 | `update_saved_filter` | write | `POST /filters/{id}` |
 | `mark_notification_read` | write | `POST /notifications/{id}` |
 | `create_api_token` | write | `PUT /tokens` |
-| `set_task_done` | write | `POST /tasks/{id}` |
+| `create_caldav_token` | write | `PUT /user/settings/token/caldav` |
 | `delete_task` | delete | `DELETE /tasks/{id}` |
-| `update_project` | write | `POST /projects/{id}` |
-| `archive_project` | write | `POST /projects/{id}` |
-| `create_label` | additive | `PUT /labels` |
 | `delete_project` | delete | `DELETE /projects/{id}` |
 | `remove_label_from_task` | delete | `DELETE /tasks/{id}/labels/{labelId}` |
 | `unassign_user` | delete | `DELETE /tasks/{id}/assignees/{userId}` |
 | `delete_task_comment` | delete | `DELETE /tasks/{id}/comments/{commentId}` |
 | `delete_task_relation` | delete | `DELETE /tasks/{id}/relations/{kind}/{otherId}` |
 | `delete_task_attachment` | delete | `DELETE /tasks/{id}/attachments/{attachmentId}` |
+| `delete_label` | delete | `DELETE /labels/{id}` |
+| `delete_bucket` | delete | `DELETE /projects/{id}/views/{view}/buckets/{bucketId}` |
+| `remove_team_member` | delete | `DELETE /teams/{id}/members/{userId}` |
 | `delete_saved_filter` | delete | `DELETE /filters/{id}` |
 | `unsubscribe` | delete | `DELETE /subscriptions/{entity}/{id}` |
 | `delete_webhook` | delete | `DELETE /projects/{id}/webhooks/{webhookId}` |
+| `delete_caldav_token` | delete | `DELETE /user/settings/token/caldav/{id}` |
 
 `list_projects`, `list_tasks`, and `list_all_tasks` support optional `page` and
 `per_page`. Responses include `{ page, total_pages, count, items }`; paginate by
@@ -170,7 +192,7 @@ Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
 | Env var | Example |
 | --- | --- |
 | `VIKUNJA_URL` | `https://app.vikunja.cloud/api/v1` (note the `/api/v1`) |
-| `VIKUNJA_API_TOKEN` | `tk_...` (a Vikunja API token, scoped to Projects + Tasks) |
+| `VIKUNJA_API_TOKEN` | `tk_...` (a Vikunja API token; scope it to the areas whose tools you enable — Projects + Tasks covers the default read/additive set, but Teams, Labels, Webhooks, Filters, Subscriptions, Tokens and CalDAV each need their own scope) |
 | `VIKUNJA_MCP_ALLOW_WRITE` | `1` to also expose **write** tools (updates, sharing, webhooks, API tokens) — off by default |
 | `VIKUNJA_MCP_ALLOW_DELETE` | `1` to also expose **delete** (destructive) tools — off by default |
 
@@ -298,9 +320,10 @@ Notes:
 
 Releases are cut from `v*` git tags via
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which runs the
-unit tests and publishes a GitHub Release with generated notes. The version is
-bumped only at release time (`npm version`), never in feature PRs. See
-[`docs/RELEASING.md`](docs/RELEASING.md).
+unit tests, publishes the package to npm via OIDC Trusted Publishing (no stored
+token, build provenance attached), and creates a GitHub Release with generated
+notes. The version is bumped only at release time (`npm version`), never in
+feature PRs. See [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## License
 
