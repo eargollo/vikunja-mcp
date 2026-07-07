@@ -1,6 +1,6 @@
 {
   "name": "@eargollo/vikunja-mcp",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Minimal, self-owned MCP server for Vikunja — one dependency, scoped read+additive tools.",
   "type": "module",
   "bin": {
