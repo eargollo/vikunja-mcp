@@ -82,9 +82,11 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "create_task",
     "create_task_relation",
     "create_team",
+    "get_current_user",
     "get_project",
     "get_task",
     "list_all_tasks",
+    "list_api_tokens",
     "list_buckets",
     "list_labels",
     "list_notifications",
@@ -118,6 +120,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "delete_saved_filter",
     "mark_notification_read",
     "unsubscribe",
+    "create_api_token",
   ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
@@ -575,6 +578,43 @@ test("share_project_with_team and create_link_share succeed", { skip }, async ()
 test("list_notifications returns a (possibly empty) list without error", { skip }, async () => {
   const res = parse(await client.callTool({ name: "list_notifications", arguments: {} }));
   assert.ok(Array.isArray(res.items), "items should be an array");
+});
+
+test("get_current_user returns the token owner", { skip }, async () => {
+  const user = parse(await client.callTool({ name: "get_current_user", arguments: {} }));
+  assert.ok(Number.isInteger(user.id));
+  assert.equal(typeof user.username, "string");
+  assert.ok(user.username.length > 0);
+});
+
+test("create_api_token (write-gated) then list_api_tokens (secret returned once, never listed)", { skip }, async () => {
+  const wc = await getWriteClient(); // create_api_token is write-tier (credential minting)
+  const created = parse(
+    await wc.callTool({
+      name: "create_api_token",
+      arguments: {
+        title: `e2e token ${process.hrtime.bigint()}`,
+        expires_at: "2030-01-01T00:00:00Z",
+        permissions: { tasks: ["read_all"] },
+      },
+    }),
+  );
+  assert.ok(Number.isInteger(created.id));
+  assert.ok(typeof created.token === "string" && created.token.startsWith("tk_"), "returns the tk_ secret");
+
+  const list = parse(await client.callTool({ name: "list_api_tokens", arguments: {} }));
+  const found = list.items.find((t) => t.id === created.id);
+  assert.ok(found, "token appears in list_api_tokens");
+  assert.ok(!("token" in found), "the secret is never returned in the list");
+});
+
+test("create_api_token is not callable without the write flag", { skip }, async () => {
+  const result = await client.callTool({
+    name: "create_api_token",
+    arguments: { title: "x", expires_at: "2030-01-01T00:00:00Z", permissions: { tasks: ["read_all"] } },
+  });
+  assert.ok(result.isError, "credential-minting must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
 });
 
 test("subscribe then unsubscribe round-trips a task subscription", { skip }, async () => {
