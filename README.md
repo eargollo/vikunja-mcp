@@ -190,41 +190,23 @@ Inputs use `*_id`; list/detail outputs use `id`.
 
 Invalid input (bad `project_id`, empty `title`, unknown tool) comes back as an MCP tool error (`isError: true`) with a message, never a crash.
 
-## API coverage
+## Scope & gaps
 
-The goal is to cover the **most common** Vikunja v1 operations agents need,
-added TDD-style (unit + e2e). This is not a complete mirror of every endpoint
-(CalDAV sync itself uses `/dav`, not these tools). To keep the
-[trust posture](#why-this-exists), tools are tiered: **read** and **additive**
-are always on; **write** (update, sharing, egress, credential minting, bulk
-replace) tools require `VIKUNJA_MCP_ALLOW_WRITE=1` and **delete** tools require
-`VIKUNJA_MCP_ALLOW_DELETE=1`, so a default install can never modify or destroy
-data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
+The goal is the **most common** Vikunja v1 operations agents need, added TDD-style
+(unit + e2e) — not a complete mirror of every endpoint. The [Tools](#tools) table
+above is the authoritative, per-tool coverage list; by area that spans Projects ·
+Tasks (detail, filter/sort, bulk) · Labels · Assignees · Task comments · Task
+relations · Attachments (base64) · Kanban buckets · Teams & members · Project
+sharing (user/team/link) · Saved filters · Subscriptions & notifications · Current
+user, API tokens & CalDAV · Webhooks.
 
-| Area | Status |
-| --- | --- |
-| Projects — list, get, create, update, archive, delete | ✅ shipped |
-| Tasks — list, get, create, update, delete, bulk update | ✅ shipped |
-| Task detail & filtering (`get_task`, `list_all_tasks`, filter/sort) | ✅ shipped |
-| Rich task create & update (`update_task`, `set_task_done`, create fields) | ✅ shipped |
-| Labels — list/create/update/delete; add/remove on tasks; bulk replace on task | ✅ shipped |
-| Assignees (`search_users`, list/assign/unassign; bulk replace on task) | ✅ shipped |
-| Task comments (list/add/update/delete) | ✅ shipped |
-| Task relations (list/create/delete) | ✅ shipped |
-| Attachments (list/upload/delete, base64 upload) | ✅ shipped |
-| Kanban buckets (list/create/update/delete, move task) | ✅ shipped |
-| Teams — list/create/get/update; members add/remove/admin toggle | ✅ shipped |
-| Project sharing (user/team/link shares) | ✅ shipped |
-| Saved filters (list/create/update/delete) | ✅ shipped |
-| Subscriptions & notifications (list/mark-read, subscribe/unsubscribe) | ✅ shipped |
-| Current user, API tokens, CalDAV tokens & connection info | ✅ shipped |
-| Webhooks (list/create/update/delete) | ✅ shipped |
+**Intentional gaps:** no CalDAV sync itself (that uses `/dav`, not these tools), no
+arbitrary `/routes` proxy, no admin endpoints, and no user-level webhooks (project
+webhooks only). Tool results carry MCP `structuredContent`, but no declared
+`outputSchema` yet.
 
-Partial / intentional gaps: no arbitrary `/routes` proxy, no admin endpoints, no
-user-level webhooks, no `outputSchema` on tool results (JSON text is enough for
-now). See [CHANGELOG.md](CHANGELOG.md) for recent additions.
-
-Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
+See [CHANGELOG.md](CHANGELOG.md) for recent additions and
+[#21](https://github.com/eargollo/vikunja-mcp/issues/21) for the roadmap.
 
 ## Config
 
