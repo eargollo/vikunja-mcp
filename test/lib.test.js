@@ -30,6 +30,9 @@ import {
   requireUserId,
   userSummary,
   requireQuery,
+  requireCommentId,
+  requireComment,
+  commentSummary,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -344,6 +347,41 @@ test("requireQuery trims and requires a non-empty string", () => {
   for (const bad of ["", "   ", 5, null, undefined]) {
     assert.throws(() => requireQuery(bad), /query must not be empty/, `reject ${String(bad)}`);
   }
+});
+
+test("requireCommentId accepts positive integers, rejects the rest", () => {
+  assert.equal(requireCommentId(1), 1);
+  assert.equal(requireCommentId("42"), 42);
+  for (const bad of [0, -1, 1.5, "x", null, undefined]) {
+    assert.throws(() => requireCommentId(bad), /comment_id must be a positive integer/, `reject ${String(bad)}`);
+  }
+});
+
+test("requireComment trims and requires non-empty text", () => {
+  assert.equal(requireComment("  hello  "), "hello");
+  assert.equal(requireComment("multi\nline"), "multi\nline");
+  for (const bad of ["", "   ", 5, null, undefined]) {
+    assert.throws(() => requireComment(bad), /comment must not be empty/, `reject ${String(bad)}`);
+  }
+});
+
+test("commentSummary curates id/comment/author/created", () => {
+  assert.deepEqual(
+    commentSummary({
+      id: 3,
+      comment: "hi",
+      author: { id: 1, username: "me", secret: "x" },
+      created: "2026-01-01T00:00:00Z",
+      reactions: {},
+    }),
+    { id: 3, comment: "hi", author: "me", created: "2026-01-01T00:00:00Z" },
+  );
+  assert.deepEqual(commentSummary({ id: 4, comment: "x" }), {
+    id: 4,
+    comment: "x",
+    author: null,
+    created: null,
+  });
 });
 
 test("tierAllowed filters a synthetic tool list by env flags", () => {

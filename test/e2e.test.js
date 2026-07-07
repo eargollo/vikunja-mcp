@@ -72,6 +72,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
     "add_label_to_task",
+    "add_task_comment",
     "assign_user",
     "create_label",
     "create_project",
@@ -82,6 +83,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "list_labels",
     "list_projects",
     "list_task_assignees",
+    "list_task_comments",
     "list_tasks",
     "search_users",
   ]);
@@ -93,6 +95,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "delete_project",
     "remove_label_from_task",
     "unassign_user",
+    "delete_task_comment",
   ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
@@ -158,7 +161,14 @@ test("list_all_tasks finds a created task across projects and supports filter", 
     await client.callTool({ name: "create_task", arguments: { project_id: projectId, title } }),
   );
 
-  const all = parse(await client.callTool({ name: "list_all_tasks", arguments: { filter: "done = false" } }));
+  // Sort newest-first so the just-created task is on page 1 regardless of how
+  // many tasks the throwaway instance has accumulated.
+  const all = parse(
+    await client.callTool({
+      name: "list_all_tasks",
+      arguments: { filter: "done = false", sort_by: "id", order_by: "desc" },
+    }),
+  );
   const found = all.items.find((t) => t.id === created.id);
   assert.ok(found, "created task should appear in list_all_tasks");
   assert.equal(found.project_id, projectId);
@@ -366,6 +376,38 @@ test("assign_user, list_task_assignees, unassign_user round-trip", { skip }, asy
 
 test("unassign_user is not callable without the delete flag", { skip }, async () => {
   const result = await client.callTool({ name: "unassign_user", arguments: { task_id: 1, user_id: 1 } });
+  assert.ok(result.isError, "delete tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
+});
+
+test("add_task_comment, list_task_comments, delete_task_comment round-trip", { skip }, async () => {
+  const wc = await getWriteClient(); // delete_task_comment is delete-tier
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const task = parse(
+    await client.callTool({
+      name: "create_task",
+      arguments: { project_id: projects.items[0].id, title: `e2e comment ${process.hrtime.bigint()}` },
+    }),
+  );
+  const text = `hello ${process.hrtime.bigint()}`;
+  const added = parse(await client.callTool({ name: "add_task_comment", arguments: { task_id: task.id, comment: text } }));
+  assert.equal(added.comment, text);
+  assert.ok(Number.isInteger(added.id));
+
+  const list = parse(await client.callTool({ name: "list_task_comments", arguments: { task_id: task.id } }));
+  assert.ok(list.items.some((c) => c.id === added.id), "comment appears in list");
+  assert.ok(Number.isInteger(list.total_pages) && list.total_pages >= 1, "comments list reports total_pages");
+
+  const deleted = parse(
+    await wc.callTool({ name: "delete_task_comment", arguments: { task_id: task.id, comment_id: added.id } }),
+  );
+  assert.deepEqual(deleted, { task_id: task.id, comment_id: added.id, deleted: true });
+  const after = parse(await client.callTool({ name: "list_task_comments", arguments: { task_id: task.id } }));
+  assert.ok(!after.items.some((c) => c.id === added.id), "comment removed");
+});
+
+test("delete_task_comment is not callable without the delete flag", { skip }, async () => {
+  const result = await client.callTool({ name: "delete_task_comment", arguments: { task_id: 1, comment_id: 1 } });
   assert.ok(result.isError, "delete tool must be gated off by default");
   assert.match(result.content[0].text, /Unknown tool/);
 });
