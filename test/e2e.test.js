@@ -76,9 +76,11 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "assign_user",
     "create_bucket",
     "create_label",
+    "create_link_share",
     "create_project",
     "create_task",
     "create_task_relation",
+    "create_team",
     "get_project",
     "get_task",
     "list_all_tasks",
@@ -90,7 +92,10 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "list_task_comments",
     "list_task_relations",
     "list_tasks",
+    "list_teams",
     "search_users",
+    "share_project_with_team",
+    "share_project_with_user",
     "upload_task_attachment",
   ]);
   for (const gated of [
@@ -531,6 +536,46 @@ test("move_task_to_bucket is not callable without the write flag", { skip }, asy
   });
   assert.ok(result.isError, "write tool must be gated off by default");
   assert.match(result.content[0].text, /Unknown tool/);
+});
+
+test("create_team then list_teams round-trips (additive + read)", { skip }, async () => {
+  const name = `e2e team ${process.hrtime.bigint()}`;
+  const team = parse(await client.callTool({ name: "create_team", arguments: { name } }));
+  assert.ok(Number.isInteger(team.id));
+  assert.equal(team.name, name);
+  const teams = parse(await client.callTool({ name: "list_teams", arguments: {} }));
+  assert.ok(teams.items.some((t) => t.id === team.id), "created team appears in list_teams");
+});
+
+test("share_project_with_team and create_link_share succeed", { skip }, async () => {
+  const team = parse(await client.callTool({ name: "create_team", arguments: { name: `e2e share ${process.hrtime.bigint()}` } }));
+  const project = parse(await client.callTool({ name: "create_project", arguments: { title: `e2e shared ${process.hrtime.bigint()}` } }));
+
+  const shared = parse(
+    await client.callTool({
+      name: "share_project_with_team",
+      arguments: { project_id: project.id, team_id: team.id, permission: 1 },
+    }),
+  );
+  assert.deepEqual(shared, { project_id: project.id, team_id: team.id, permission: 1, shared: true });
+
+  const link = parse(await client.callTool({ name: "create_link_share", arguments: { project_id: project.id, permission: 0 } }));
+  assert.equal(link.project_id, project.id);
+  assert.ok(typeof link.hash === "string" && link.hash.length > 0, "returns a share hash");
+});
+
+test("share_project_with_user surfaces a clean error for a nonexistent user", { skip }, async () => {
+  // The throwaway instance has only the owner, and Vikunja won't let a project
+  // be shared with its own owner, so a positive round-trip is impossible here —
+  // the request-body/permission coverage lives in the unit test. This asserts
+  // the plumbing reaches Vikunja and errors cleanly. Don't "strengthen" it into
+  // a success assertion; it will fail on a single-user instance.
+  const project = parse(await client.callTool({ name: "create_project", arguments: { title: `e2e usershare ${process.hrtime.bigint()}` } }));
+  const result = await client.callTool({
+    name: "share_project_with_user",
+    arguments: { project_id: project.id, user_id: 999999, permission: 1 },
+  });
+  assert.ok(result.isError, "sharing with a nonexistent user should error, not crash");
 });
 
 test("invalid project_id surfaces a tool error, not a crash", { skip }, async () => {

@@ -104,6 +104,16 @@ export function bucketSummary(b) {
   return { id: b.id, title: b.title, limit: b.limit ?? 0, count: b.count ?? 0 };
 }
 
+// Vikunja sharing permission level: 0 = read, 1 = read+write, 2 = admin.
+export function optionalPermission(value) {
+  if (value === undefined) return undefined;
+  const p = Number(value);
+  if (!Number.isInteger(p) || p < 0 || p > 2) {
+    throw new Error("permission must be 0 (read), 1 (read+write), or 2 (admin)");
+  }
+  return p;
+}
+
 export function commentSummary(c) {
   return {
     id: c.id,
