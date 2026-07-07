@@ -11,10 +11,18 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
   alongside the text block, so clients can consume typed output without
   re-parsing.
 
+### Fixed / hardened
+
+- `api()` surfaces `401`/`403` as a clear "authentication failed — check
+  VIKUNJA_API_TOKEN" error instead of a generic 4xx.
+
 ### Tests
 
 - e2e now asserts `tools/list` emits titles + tier-derived annotations, and that
   `structuredContent` mirrors the text payload.
+- Unit tests added for the 14 handlers that were previously e2e-only, bringing
+  `tools.js` to 100% function coverage (exact method/path/body, fetch-merge
+  no-clobber, validate-before-network).
 
 ## 1.0.1 - 2026-07-07
 
