@@ -40,6 +40,25 @@ export function requireLabelId(value) {
   return id;
 }
 
+export function requireUserId(value) {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("user_id must be a positive integer");
+  }
+  return id;
+}
+
+export function userSummary(u) {
+  return { id: u.id, username: u.username, name: u.name ?? "" };
+}
+
+export function requireQuery(value) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error("query must not be empty");
+  }
+  return value.trim();
+}
+
 export function optionalHexColor(value) {
   if (value === undefined) return undefined;
   if (typeof value !== "string") {

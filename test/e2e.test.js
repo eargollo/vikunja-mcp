@@ -72,6 +72,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
     "add_label_to_task",
+    "assign_user",
     "create_label",
     "create_project",
     "create_task",
@@ -80,7 +81,9 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "list_all_tasks",
     "list_labels",
     "list_projects",
+    "list_task_assignees",
     "list_tasks",
+    "search_users",
   ]);
   for (const gated of [
     "update_task",
@@ -89,6 +92,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "archive_project",
     "delete_project",
     "remove_label_from_task",
+    "unassign_user",
   ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
@@ -323,6 +327,45 @@ test("remove_label_from_task is not callable without the delete flag", { skip },
     name: "remove_label_from_task",
     arguments: { task_id: 1, label_id: 1 },
   });
+  assert.ok(result.isError, "delete tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
+});
+
+test("search_users returns a (possibly empty) user list without error", { skip }, async () => {
+  const res = parse(await client.callTool({ name: "search_users", arguments: { query: "a" } }));
+  assert.ok(Array.isArray(res.users), "users should be an array");
+});
+
+test("assign_user, list_task_assignees, unassign_user round-trip", { skip }, async () => {
+  const wc = await getWriteClient(); // unassign_user is delete-tier
+  // the bootstrap user is the token owner; find their id via the seeded task's assignee later
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const task = parse(
+    await client.callTool({
+      name: "create_task",
+      arguments: { project_id: projects.items[0].id, title: `e2e assignee ${process.hrtime.bigint()}` },
+    }),
+  );
+  // assign the token owner (user id 1 in the throwaway test instance)
+  const userId = 1;
+  const assigned = parse(
+    await client.callTool({ name: "assign_user", arguments: { task_id: task.id, user_id: userId } }),
+  );
+  assert.deepEqual(assigned, { task_id: task.id, user_id: userId, assigned: true });
+
+  const list = parse(await client.callTool({ name: "list_task_assignees", arguments: { task_id: task.id } }));
+  assert.ok(list.assignees.some((u) => u.id === userId), "assignee shows up");
+
+  const unassigned = parse(
+    await wc.callTool({ name: "unassign_user", arguments: { task_id: task.id, user_id: userId } }),
+  );
+  assert.deepEqual(unassigned, { task_id: task.id, user_id: userId, unassigned: true });
+  const after = parse(await client.callTool({ name: "list_task_assignees", arguments: { task_id: task.id } }));
+  assert.ok(!after.assignees.some((u) => u.id === userId), "assignee removed");
+});
+
+test("unassign_user is not callable without the delete flag", { skip }, async () => {
+  const result = await client.callTool({ name: "unassign_user", arguments: { task_id: 1, user_id: 1 } });
   assert.ok(result.isError, "delete tool must be gated off by default");
   assert.match(result.content[0].text, /Unknown tool/);
 });

@@ -30,9 +30,12 @@ This one is the opposite:
 | `list_all_tasks` | read | `GET /tasks` |
 | `get_task` | read | `GET /tasks/{id}` |
 | `list_labels` | read | `GET /labels` |
+| `search_users` | read | `GET /users?s=` |
+| `list_task_assignees` | read | `GET /tasks/{id}` |
 | `create_project` | additive | `PUT /projects` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 | `add_label_to_task` | additive | `PUT /tasks/{id}/labels` |
+| `assign_user` | additive | `PUT /tasks/{id}/assignees` |
 | `update_task` | write | `POST /tasks/{id}` |
 | `set_task_done` | write | `POST /tasks/{id}` |
 | `update_project` | write | `POST /projects/{id}` |
@@ -40,6 +43,7 @@ This one is the opposite:
 | `create_label` | additive | `PUT /labels` |
 | `delete_project` | delete | `DELETE /projects/{id}` |
 | `remove_label_from_task` | delete | `DELETE /tasks/{id}/labels/{labelId}` |
+| `unassign_user` | delete | `DELETE /tasks/{id}/assignees/{userId}` |
 
 `list_projects`, `list_tasks`, and `list_all_tasks` support optional `page` and
 `per_page`. Responses include `{ page, total_pages, count, items }`; paginate by
@@ -97,7 +101,7 @@ data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 | Rich task create & update (`update_task`, `set_task_done`, create fields) | ✅ shipped |
 | Projects — get, create, update, archive, delete | ✅ shipped |
 | Labels (`list`/`create_label`, add/remove on tasks) | ✅ shipped |
-| Assignees | 🔜 [#9](https://github.com/eargollo/vikunja-mcp/issues/9) |
+| Assignees (`search_users`, list/assign/unassign) | ✅ shipped |
 | Comments | 🔜 [#10](https://github.com/eargollo/vikunja-mcp/issues/10) |
 | Task relations | 🔜 [#11](https://github.com/eargollo/vikunja-mcp/issues/11) |
 | Attachments | 🔜 [#12](https://github.com/eargollo/vikunja-mcp/issues/12) |
