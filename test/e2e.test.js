@@ -371,7 +371,7 @@ test("remove_label_from_task is not callable without the delete flag", { skip },
 
 test("search_users returns a (possibly empty) user list without error", { skip }, async () => {
   const res = parse(await client.callTool({ name: "search_users", arguments: { query: "a" } }));
-  assert.ok(Array.isArray(res.users), "users should be an array");
+  assert.ok(Array.isArray(res.items), "items should be an array");
 });
 
 test("assign_user, list_task_assignees, unassign_user round-trip", { skip }, async () => {
@@ -392,14 +392,14 @@ test("assign_user, list_task_assignees, unassign_user round-trip", { skip }, asy
   assert.deepEqual(assigned, { ok: true, task_id: task.id, user_id: userId });
 
   const list = parse(await client.callTool({ name: "list_task_assignees", arguments: { task_id: task.id } }));
-  assert.ok(list.assignees.some((u) => u.id === userId), "assignee shows up");
+  assert.ok(list.items.some((u) => u.id === userId), "assignee shows up");
 
   const unassigned = parse(
     await wc.callTool({ name: "unassign_user", arguments: { task_id: task.id, user_id: userId } }),
   );
   assert.deepEqual(unassigned, { ok: true, task_id: task.id, user_id: userId });
   const after = parse(await client.callTool({ name: "list_task_assignees", arguments: { task_id: task.id } }));
-  assert.ok(!after.assignees.some((u) => u.id === userId), "assignee removed");
+  assert.ok(!after.items.some((u) => u.id === userId), "assignee removed");
 });
 
 test("unassign_user is not callable without the delete flag", { skip }, async () => {
@@ -526,7 +526,7 @@ test("list_buckets, create_bucket, move_task_to_bucket round-trip", { skip }, as
 
   const before = parse(await client.callTool({ name: "list_buckets", arguments: { project_id: pid } }));
   assert.ok(Number.isInteger(before.view_id), "resolved a kanban view");
-  assert.ok(before.buckets.length >= 1, "kanban view seeds at least one bucket");
+  assert.ok(before.items.length >= 1, "kanban view seeds at least one bucket");
 
   const bucket = parse(
     await client.callTool({ name: "create_bucket", arguments: { project_id: pid, title: `e2e col ${process.hrtime.bigint()}` } }),
