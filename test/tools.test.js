@@ -1342,3 +1342,169 @@ test("get_caldav_info returns dav URLs and token metadata", async () => {
   assert.equal(res.dav_base_url, "http://vikunja.test/dav");
   assert.deepEqual(res.tokens, [{ id: 9, created: "2026-01-01T00:00:00Z" }]);
 });
+
+// --- Unit coverage for handlers previously exercised only by e2e -------------
+
+const build = (api) => buildTools({ api, base: TEST_BASE });
+
+test("delete_label DELETEs /labels/{id} and confirms", async () => {
+  const seen = [];
+  const api = async (m, p) => (seen.push([m, p]), { data: {}, headers: headers() });
+  assert.deepEqual(await byName(build(api), "delete_label").run({ label_id: 4 }), { ok: true, label_id: 4 });
+  assert.deepEqual(seen, [["DELETE", "/labels/4"]]);
+});
+
+test("update_task_comment POSTs the new text and returns the shaped comment", async () => {
+  const api = async (m, p, b) => {
+    assert.deepEqual([m, p, b], ["POST", "/tasks/7/comments/3", { comment: "edited" }]);
+    return { data: { id: 3, comment: "edited", author: { username: "me" } }, headers: headers() };
+  };
+  const res = await byName(build(api), "update_task_comment").run({ task_id: 7, comment_id: 3, comment: " edited " });
+  assert.equal(res.comment, "edited");
+});
+
+test("update_bucket fetch-merges, preserving title when only limit changes", async () => {
+  let posted;
+  const api = async (m, p, b) => {
+    if (p === "/projects/5/views") return { data: [{ id: 9, view_kind: "kanban" }], headers: headers() };
+    if (m === "GET") return { data: [{ id: 2, title: "Doing", limit: 3 }], headers: headers() };
+    posted = { p, b };
+    return { data: { id: 2, title: "Doing", limit: 7 }, headers: headers() };
+  };
+  const res = await byName(build(api), "update_bucket").run({ project_id: 5, bucket_id: 2, limit: 7 });
+  assert.deepEqual(posted, { p: "/projects/5/views/9/buckets/2", b: { title: "Doing", limit: 7 } });
+  assert.equal(res.view_id, 9);
+});
+
+test("update_bucket errors on no fields, before touching the network", async () => {
+  let called = false;
+  const api = async () => ((called = true), { data: {}, headers: headers() });
+  await assert.rejects(() => byName(build(api), "update_bucket").run({ project_id: 5, bucket_id: 2 }), /no fields to update/);
+  assert.equal(called, false);
+});
+
+test("delete_bucket resolves the kanban view and DELETEs", async () => {
+  const seen = [];
+  const api = async (m, p) => {
+    if (p === "/projects/5/views") return { data: [{ id: 9, view_kind: "kanban" }], headers: headers() };
+    seen.push([m, p]);
+    return { data: {}, headers: headers() };
+  };
+  const res = await byName(build(api), "delete_bucket").run({ project_id: 5, bucket_id: 2 });
+  assert.deepEqual(res, { ok: true, project_id: 5, view_id: 9, bucket_id: 2 });
+  assert.deepEqual(seen, [["DELETE", "/projects/5/views/9/buckets/2"]]);
+});
+
+test("get_team GETs /teams/{id} and shapes members", async () => {
+  const api = async (m, p) => {
+    assert.deepEqual([m, p], ["GET", "/teams/4"]);
+    return { data: { id: 4, name: "Squad", members: [{ id: 2, username: "a", admin: true }] }, headers: headers() };
+  };
+  const res = await byName(build(api), "get_team").run({ team_id: 4 });
+  assert.deepEqual(res, { id: 4, name: "Squad", members: [{ id: 2, username: "a", admin: true }] });
+});
+
+test("update_team POSTs the new name", async () => {
+  const api = async (m, p, b) => {
+    assert.deepEqual([m, p, b], ["POST", "/teams/4", { name: "Renamed" }]);
+    return { data: { id: 4, name: "Renamed" }, headers: headers() };
+  };
+  assert.deepEqual(await byName(build(api), "update_team").run({ team_id: 4, name: " Renamed " }), { id: 4, name: "Renamed" });
+});
+
+test("add_team_member PUTs the username (+ optional admin) and returns the member", async () => {
+  const api = async (m, p, b) => {
+    assert.deepEqual([m, p, b], ["PUT", "/teams/4/members", { username: "bob", admin: true }]);
+    return { data: { id: 9, username: "bob", admin: true }, headers: headers() };
+  };
+  const res = await byName(build(api), "add_team_member").run({ team_id: 4, username: "bob", admin: true });
+  assert.deepEqual(res, { team_id: 4, id: 9, username: "bob", admin: true });
+});
+
+test("remove_team_member DELETEs /teams/{id}/members/{userId}", async () => {
+  const api = async (m, p) => {
+    assert.deepEqual([m, p], ["DELETE", "/teams/4/members/9"]);
+    return { data: {}, headers: headers() };
+  };
+  assert.deepEqual(await byName(build(api), "remove_team_member").run({ team_id: 4, user_id: 9 }), { ok: true, team_id: 4, user_id: 9 });
+});
+
+test("toggle_team_member_admin POSTs the admin toggle", async () => {
+  const api = async (m, p) => {
+    assert.deepEqual([m, p], ["POST", "/teams/4/members/9/admin"]);
+    return { data: {}, headers: headers() };
+  };
+  assert.deepEqual(await byName(build(api), "toggle_team_member_admin").run({ team_id: 4, user_id: 9 }), { ok: true, team_id: 4, user_id: 9 });
+});
+
+test("update_webhook fetch-merges, preserving target_url/events when only secret changes", async () => {
+  let posted;
+  const api = async (m, p, b) => {
+    if (m === "GET") {
+      assert.equal(p, "/projects/5/webhooks");
+      return { data: [{ id: 2, target_url: "https://x/hook", events: ["task.created"] }], headers: headers() };
+    }
+    posted = { p, b };
+    return { data: { id: 2, target_url: "https://x/hook", events: ["task.created"] }, headers: headers() };
+  };
+  await byName(build(api), "update_webhook").run({ project_id: 5, webhook_id: 2, secret: "s" });
+  assert.deepEqual(posted, {
+    p: "/projects/5/webhooks/2",
+    b: { target_url: "https://x/hook", events: ["task.created"], secret: "s" },
+  });
+});
+
+test("update_webhook errors on no fields, before the network", async () => {
+  let called = false;
+  const api = async () => ((called = true), { data: {}, headers: headers() });
+  await assert.rejects(() => byName(build(api), "update_webhook").run({ project_id: 5, webhook_id: 2 }), /no fields to update/);
+  assert.equal(called, false);
+});
+
+test("set_task_labels POSTs the full label set (allows empty)", async () => {
+  const seen = [];
+  const api = async (m, p, b) => (seen.push([m, p, b]), { data: {}, headers: headers() });
+  const tools = build(api);
+  assert.deepEqual(await byName(tools, "set_task_labels").run({ task_id: 7, label_ids: [1, 2] }), {
+    ok: true, task_id: 7, label_ids: [1, 2],
+  });
+  await byName(tools, "set_task_labels").run({ task_id: 7, label_ids: [] });
+  assert.deepEqual(seen, [
+    ["POST", "/tasks/7/labels/bulk", { labels: [{ id: 1 }, { id: 2 }] }],
+    ["POST", "/tasks/7/labels/bulk", { labels: [] }],
+  ]);
+});
+
+test("set_task_assignees POSTs the full assignee set (allows empty)", async () => {
+  const api = async (m, p, b) => {
+    assert.deepEqual([m, p, b], ["POST", "/tasks/7/assignees/bulk", { assignees: [{ id: 3 }] }]);
+    return { data: {}, headers: headers() };
+  };
+  assert.deepEqual(await byName(build(api), "set_task_assignees").run({ task_id: 7, user_ids: [3] }), {
+    ok: true, task_id: 7, user_ids: [3],
+  });
+});
+
+test("set_task_labels rejects a non-array before the network", async () => {
+  let called = false;
+  const api = async () => ((called = true), { data: {}, headers: headers() });
+  await assert.rejects(() => byName(build(api), "set_task_labels").run({ task_id: 7, label_ids: 5 }), /must be an array/);
+  assert.equal(called, false);
+});
+
+test("create_caldav_token PUTs and returns the secret once", async () => {
+  const api = async (m, p) => {
+    assert.deepEqual([m, p], ["PUT", "/user/settings/token/caldav"]);
+    return { data: { id: 3, token: "cd_secret", created: "2026-01-01T00:00:00Z" }, headers: headers() };
+  };
+  const res = await byName(build(api), "create_caldav_token").run({});
+  assert.deepEqual(res, { id: 3, token: "cd_secret", created: "2026-01-01T00:00:00Z" });
+});
+
+test("delete_caldav_token DELETEs /user/settings/token/caldav/{id}", async () => {
+  const api = async (m, p) => {
+    assert.deepEqual([m, p], ["DELETE", "/user/settings/token/caldav/3"]);
+    return { data: {}, headers: headers() };
+  };
+  assert.deepEqual(await byName(build(api), "delete_caldav_token").run({ token_id: 3 }), { ok: true, token_id: 3 });
+});
