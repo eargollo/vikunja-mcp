@@ -38,7 +38,69 @@ test("each tool has the expected tier", () => {
     update_project: "write",
     archive_project: "write",
     delete_project: "delete",
+    list_labels: "read",
+    create_label: "additive",
+    add_label_to_task: "additive",
+    remove_label_from_task: "delete",
   });
+});
+
+test("list_labels maps id/title/hex_color into the paginated envelope", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/labels?per_page=50");
+    return {
+      data: [{ id: 1, title: "urgent", hex_color: "ff0000", extra: "drop" }],
+      headers: headers({ "x-pagination-total-pages": "1" }),
+    };
+  };
+  const res = await byName(buildTools({ api }), "list_labels").run({ per_page: 50 });
+  assert.deepEqual(res.items, [{ id: 1, title: "urgent", hex_color: "ff0000" }]);
+});
+
+test("create_label PUTs title + optional hex_color and returns the summary", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/labels");
+    assert.deepEqual(body, { title: "urgent", hex_color: "ff0000" });
+    return { data: { id: 5, title: "urgent", hex_color: "ff0000" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "create_label").run({ title: " urgent ", hex_color: "#FF0000" });
+  assert.deepEqual(res, { id: 5, title: "urgent", hex_color: "ff0000" });
+});
+
+test("add_label_to_task validates ids and PUTs { label_id }", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/tasks/7/labels");
+    assert.deepEqual(body, { label_id: 3 });
+    return { data: { label_id: 3 }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "add_label_to_task").run({ task_id: 7, label_id: 3 });
+  assert.deepEqual(res, { task_id: 7, label_id: 3, added: true });
+});
+
+test("add_label_to_task rejects a bad label_id before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "add_label_to_task").run({ task_id: 7, label_id: 0 }),
+    /label_id must be a positive integer/,
+  );
+  assert.equal(called, false);
+});
+
+test("remove_label_from_task DELETEs /tasks/{id}/labels/{labelId} and confirms", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/tasks/7/labels/3");
+    return { data: { message: "ok" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "remove_label_from_task").run({ task_id: 7, label_id: 3 });
+  assert.deepEqual(res, { task_id: 7, label_id: 3, removed: true });
 });
 
 test("get_project validates id, fetches /projects/{id}, shapes the detail", async () => {

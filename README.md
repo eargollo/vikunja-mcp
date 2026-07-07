@@ -29,13 +29,17 @@ This one is the opposite:
 | `list_tasks` | read | `GET /projects/{id}/tasks` |
 | `list_all_tasks` | read | `GET /tasks` |
 | `get_task` | read | `GET /tasks/{id}` |
+| `list_labels` | read | `GET /labels` |
 | `create_project` | additive | `PUT /projects` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
+| `add_label_to_task` | additive | `PUT /tasks/{id}/labels` |
 | `update_task` | write | `POST /tasks/{id}` |
 | `set_task_done` | write | `POST /tasks/{id}` |
 | `update_project` | write | `POST /projects/{id}` |
 | `archive_project` | write | `POST /projects/{id}` |
+| `create_label` | additive | `PUT /labels` |
 | `delete_project` | delete | `DELETE /projects/{id}` |
+| `remove_label_from_task` | delete | `DELETE /tasks/{id}/labels/{labelId}` |
 
 `list_projects`, `list_tasks`, and `list_all_tasks` support optional `page` and
 `per_page`. Responses include `{ page, total_pages, count, items }`; paginate by
@@ -92,7 +96,7 @@ data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 | Task detail & filtering (`get_task`, `list_all_tasks`, filter/sort) | ✅ shipped |
 | Rich task create & update (`update_task`, `set_task_done`, create fields) | ✅ shipped |
 | Projects — get, create, update, archive, delete | ✅ shipped |
-| Labels | 🔜 [#8](https://github.com/eargollo/vikunja-mcp/issues/8) |
+| Labels (`list`/`create_label`, add/remove on tasks) | ✅ shipped |
 | Assignees | 🔜 [#9](https://github.com/eargollo/vikunja-mcp/issues/9) |
 | Comments | 🔜 [#10](https://github.com/eargollo/vikunja-mcp/issues/10) |
 | Task relations | 🔜 [#11](https://github.com/eargollo/vikunja-mcp/issues/11) |

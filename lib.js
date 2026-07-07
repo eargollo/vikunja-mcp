@@ -32,6 +32,26 @@ export function requireTaskId(value) {
   return id;
 }
 
+export function requireLabelId(value) {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("label_id must be a positive integer");
+  }
+  return id;
+}
+
+export function optionalHexColor(value) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new Error("hex_color must be a 6-digit hex string (e.g. ff0000)");
+  }
+  const hex = value.replace(/^#/, "").toLowerCase();
+  if (!/^[0-9a-f]{6}$/.test(hex)) {
+    throw new Error("hex_color must be a 6-digit hex string (e.g. ff0000)");
+  }
+  return hex;
+}
+
 export function requireTitle(value) {
   if (typeof value !== "string") {
     throw new Error("title must be a string");

@@ -71,15 +71,25 @@ async function getWriteClient() {
 test("exposes exactly the read + additive tool set by default", { skip }, async () => {
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
+    "add_label_to_task",
+    "create_label",
     "create_project",
     "create_task",
     "get_project",
     "get_task",
     "list_all_tasks",
+    "list_labels",
     "list_projects",
     "list_tasks",
   ]);
-  for (const gated of ["update_task", "set_task_done", "update_project", "archive_project", "delete_project"]) {
+  for (const gated of [
+    "update_task",
+    "set_task_done",
+    "update_project",
+    "archive_project",
+    "delete_project",
+    "remove_label_from_task",
+  ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
 });
@@ -272,6 +282,47 @@ test("delete_project removes a project (delete tier)", { skip }, async () => {
 
 test("delete_project is not callable without the delete flag", { skip }, async () => {
   const result = await client.callTool({ name: "delete_project", arguments: { project_id: 1 } });
+  assert.ok(result.isError, "delete tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
+});
+
+test("create_label, list_labels, add/remove label round-trip", { skip }, async () => {
+  const wc = await getWriteClient(); // remove_label_from_task is delete-tier
+  const labelTitle = `e2e label ${process.hrtime.bigint()}`;
+  const label = parse(
+    await client.callTool({ name: "create_label", arguments: { title: labelTitle, hex_color: "#00ff00" } }),
+  );
+  assert.ok(Number.isInteger(label.id));
+  assert.equal(label.hex_color, "00ff00");
+
+  const labels = parse(await client.callTool({ name: "list_labels", arguments: {} }));
+  assert.ok(labels.items.some((l) => l.id === label.id), "created label appears in list_labels");
+
+  // attach to a fresh task, confirm via get_task, then detach
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const task = parse(
+    await client.callTool({
+      name: "create_task",
+      arguments: { project_id: projects.items[0].id, title: `e2e labeled ${process.hrtime.bigint()}` },
+    }),
+  );
+  parse(await client.callTool({ name: "add_label_to_task", arguments: { task_id: task.id, label_id: label.id } }));
+  const detail = parse(await client.callTool({ name: "get_task", arguments: { task_id: task.id } }));
+  assert.ok(detail.labels?.some((l) => l.id === label.id), "label shows on the task");
+
+  const removed = parse(
+    await wc.callTool({ name: "remove_label_from_task", arguments: { task_id: task.id, label_id: label.id } }),
+  );
+  assert.deepEqual(removed, { task_id: task.id, label_id: label.id, removed: true });
+  const after = parse(await client.callTool({ name: "get_task", arguments: { task_id: task.id } }));
+  assert.ok(!(after.labels ?? []).some((l) => l.id === label.id), "label detached");
+});
+
+test("remove_label_from_task is not callable without the delete flag", { skip }, async () => {
+  const result = await client.callTool({
+    name: "remove_label_from_task",
+    arguments: { task_id: 1, label_id: 1 },
+  });
   assert.ok(result.isError, "delete tool must be gated off by default");
   assert.match(result.content[0].text, /Unknown tool/);
 });
