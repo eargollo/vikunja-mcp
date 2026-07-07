@@ -71,7 +71,67 @@ test("each tool has the expected tier", () => {
     mark_notification_read: "write",
     subscribe: "additive",
     unsubscribe: "delete",
+    get_current_user: "read",
+    list_api_tokens: "read",
+    create_api_token: "write",
   });
+});
+
+test("get_current_user fetches /user and returns the user summary", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/user");
+    return { data: { id: 1, username: "me", name: "Me", settings: {} }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "get_current_user").run({});
+  assert.deepEqual(res, { id: 1, username: "me", name: "Me" });
+});
+
+test("list_api_tokens maps tokens into the paginated envelope (never the secret)", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/tokens");
+    return {
+      data: [{ id: 1, title: "CI", expires_at: "2027-01-01T00:00:00Z", permissions: { tasks: ["read_all"] }, token: "tk_x" }],
+      headers: headers({ "x-pagination-total-pages": "1" }),
+    };
+  };
+  const res = await byName(buildTools({ api }), "list_api_tokens").run({});
+  assert.deepEqual(res.items, [
+    { id: 1, title: "CI", expires_at: "2027-01-01T00:00:00Z", permissions: { tasks: ["read_all"] } },
+  ]);
+});
+
+test("create_api_token PUTs title/permissions/expires_at and returns the token secret", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/tokens");
+    assert.deepEqual(body, {
+      title: "CI",
+      permissions: { tasks: ["read_all"] },
+      expires_at: "2027-01-01T00:00:00.000Z",
+    });
+    return { data: { id: 5, title: "CI", token: "tk_secret", expires_at: "2027-01-01T00:00:00Z" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "create_api_token").run({
+    title: " CI ",
+    permissions: { tasks: ["read_all"] },
+    expires_at: "2027-01-01T00:00:00Z",
+  });
+  assert.deepEqual(res, { id: 5, title: "CI", token: "tk_secret", expires_at: "2027-01-01T00:00:00Z" });
+});
+
+test("create_api_token rejects empty permissions before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "create_api_token").run({ title: "x", permissions: {}, expires_at: "2027-01-01T00:00:00Z" }),
+    /permissions must be/,
+  );
+  assert.equal(called, false);
 });
 
 test("list_notifications maps into the paginated envelope", async () => {

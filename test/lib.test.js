@@ -46,6 +46,9 @@ import {
   SUBSCRIBABLE_ENTITIES,
   requireEntity,
   notificationSummary,
+  requireExpiresAt,
+  requirePermissionsMap,
+  tokenSummary,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -408,6 +411,28 @@ test("decodeBase64 decodes valid base64 to bytes, rejects empty/invalid", () => 
   for (const bad of ["", "   ", "!!!", "aGVsbG8=extra", "not base64!!", 5, null, undefined]) {
     assert.throws(() => decodeBase64(bad), /base64/, `reject ${String(bad)}`);
   }
+});
+
+test("requireExpiresAt normalizes a valid date to ISO, rejects junk/non-string", () => {
+  assert.equal(requireExpiresAt("2027-01-01T00:00:00Z"), "2027-01-01T00:00:00.000Z");
+  for (const bad of ["nope", "", 5, null, undefined]) {
+    assert.throws(() => requireExpiresAt(bad), /expires_at/, `reject ${String(bad)}`);
+  }
+});
+
+test("requirePermissionsMap requires a non-empty plain object", () => {
+  assert.deepEqual(requirePermissionsMap({ tasks: ["read_all"] }), { tasks: ["read_all"] });
+  for (const bad of [{}, [], null, "x", 5, undefined]) {
+    assert.throws(() => requirePermissionsMap(bad), /permissions must be/, `reject ${JSON.stringify(bad)}`);
+  }
+});
+
+test("tokenSummary curates id/title/expires_at/permissions (never the secret)", () => {
+  assert.deepEqual(
+    tokenSummary({ id: 1, title: "CI", expires_at: "2027-01-01T00:00:00Z", permissions: { tasks: ["read_all"] }, token: "tk_secret" }),
+    { id: 1, title: "CI", expires_at: "2027-01-01T00:00:00Z", permissions: { tasks: ["read_all"] } },
+  );
+  assert.deepEqual(tokenSummary({ id: 2, title: "x" }), { id: 2, title: "x", expires_at: null, permissions: {} });
 });
 
 test("requireEntity accepts project/task, rejects others", () => {

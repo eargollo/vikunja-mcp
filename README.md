@@ -39,6 +39,8 @@ This one is the opposite:
 | `list_teams` | read | `GET /teams` |
 | `list_saved_filters` | read | `GET /projects` (negative ids) |
 | `list_notifications` | read | `GET /notifications` |
+| `get_current_user` | read | `GET /user` |
+| `list_api_tokens` | read | `GET /tokens` |
 | `create_project` | additive | `PUT /projects` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 | `add_label_to_task` | additive | `PUT /tasks/{id}/labels` |
@@ -57,6 +59,7 @@ This one is the opposite:
 | `move_task_to_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucket_id}/tasks` |
 | `update_saved_filter` | write | `POST /filters/{id}` |
 | `mark_notification_read` | write | `POST /notifications/{id}` |
+| `create_api_token` | write | `PUT /tokens` |
 | `set_task_done` | write | `POST /tasks/{id}` |
 | `update_project` | write | `POST /projects/{id}` |
 | `archive_project` | write | `POST /projects/{id}` |
@@ -134,7 +137,7 @@ data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 | Teams & sharing (teams, user/team/link shares) | ✅ shipped |
 | Saved filters (list/create/update/delete) | ✅ shipped |
 | Subscriptions & notifications (list/mark-read, subscribe/unsubscribe) | ✅ shipped |
-| Current user & API tokens | 🔜 [#17](https://github.com/eargollo/vikunja-mcp/issues/17) |
+| Current user & API tokens (`get_current_user`, list/create tokens) | ✅ shipped |
 | Webhooks | 🔜 [#18](https://github.com/eargollo/vikunja-mcp/issues/18) |
 
 Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).

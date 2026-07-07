@@ -40,6 +40,9 @@ import {
   SUBSCRIBABLE_ENTITIES,
   requireEntity,
   notificationSummary,
+  requireExpiresAt,
+  requirePermissionsMap,
+  tokenSummary,
   buildQuery,
   paginatedResult,
   taskDetail,
@@ -1163,6 +1166,69 @@ export function buildTools({ api }) {
         const eid = requirePositiveIntId(entity_id, "entity_id");
         await api("DELETE", `/subscriptions/${ent}/${eid}`);
         return { entity: ent, entity_id: eid, unsubscribed: true };
+      },
+    },
+    {
+      name: "get_current_user",
+      tier: "read",
+      description: "Get the user the token belongs to (id, username, name).",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      run: async () => {
+        const { data } = await api("GET", "/user");
+        if (!data || data.id == null) {
+          throw new Error("Vikunja returned no user");
+        }
+        return userSummary(data);
+      },
+    },
+    {
+      name: "list_api_tokens",
+      tier: "read",
+      description:
+        "List the current user's API tokens (id, title, expires_at, permissions). The secret is never returned here — only when a token is created. Paginated.",
+      inputSchema: { type: "object", properties: paginationSchema, additionalProperties: false },
+      run: async ({ page, per_page } = {}) => {
+        const resolvedPage = optionalPage(page);
+        const resolvedPerPage = optionalPerPage(per_page);
+        const query = buildQuery({ page: resolvedPage, per_page: resolvedPerPage });
+        const { data, headers } = await api("GET", `/tokens${query}`);
+        const items = (data ?? []).map(tokenSummary);
+        return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
+      },
+    },
+    {
+      name: "create_api_token",
+      // Gated as write (not additive): minting a credential with caller-chosen
+      // permissions + expiry is privilege escalation / persistence — a default
+      // or hijacked install must not be able to do it. Not deletable "data"
+      // like other additive tools; the secret is out the moment it's created.
+      tier: "write",
+      description:
+        "Create a Vikunja API token. Requires a title, an expires_at (ISO 8601), and a non-empty permissions map (resource group -> action array, e.g. {\"tasks\":[\"read_all\"]}; see Vikunja's GET /routes). Returns the token secret ONCE — treat it as sensitive; it can't be retrieved later.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Token title" },
+          expires_at: { type: "string", description: "Expiry, ISO 8601 (required by Vikunja)" },
+          permissions: {
+            type: "object",
+            description: 'Resource group -> allowed actions, e.g. {"tasks":["read_all","read_one"]}',
+          },
+        },
+        required: ["title", "expires_at", "permissions"],
+        additionalProperties: false,
+      },
+      run: async ({ title, expires_at, permissions }) => {
+        const body = {
+          title: requireTitle(title),
+          expires_at: requireExpiresAt(expires_at),
+          permissions: requirePermissionsMap(permissions),
+        };
+        const { data: token } = await api("PUT", "/tokens", body);
+        if (!token || token.id == null) {
+          throw new Error("Vikunja returned an empty token response");
+        }
+        return { id: token.id, title: token.title, token: token.token, expires_at: token.expires_at ?? null };
       },
     },
   ];

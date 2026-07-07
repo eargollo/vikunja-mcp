@@ -112,6 +112,35 @@ export function savedFilterDetail(f) {
   };
 }
 
+export function requireExpiresAt(value) {
+  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
+    throw new Error("expires_at must be an ISO 8601 date string");
+  }
+  return new Date(value).toISOString();
+}
+
+export function requirePermissionsMap(value) {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).length === 0
+  ) {
+    throw new Error("permissions must be a non-empty object mapping resource groups to action arrays");
+  }
+  return value;
+}
+
+export function tokenSummary(t) {
+  // Never echoes `token` — the secret is only returned once, on creation.
+  return {
+    id: t.id,
+    title: t.title,
+    expires_at: t.expires_at ?? null,
+    permissions: t.permissions ?? {},
+  };
+}
+
 // Entities a user can subscribe to for notifications.
 export const SUBSCRIBABLE_ENTITIES = ["project", "task"];
 
