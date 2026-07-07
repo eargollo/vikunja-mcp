@@ -5,6 +5,8 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Unreleased
 
+## 1.1.1 - 2026-07-07
+
 ### Docs
 
 - README Tools table now lists **all** shipped tools (the team, CalDAV, bulk, and
