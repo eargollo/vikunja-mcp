@@ -124,7 +124,7 @@ Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
 
 | Env var | Example |
 | --- | --- |
-| `VIKUNJA_URL` | `http://192.168.100.20:3456/api/v1` (note the `/api/v1`) |
+| `VIKUNJA_URL` | `http://your-vikunja-host:3456/api/v1` (note the `/api/v1`) |
 | `VIKUNJA_API_TOKEN` | `tk_...` (a Vikunja API token, scoped to Projects + Tasks) |
 | `VIKUNJA_MCP_ALLOW_WRITE` | `1` to also expose **write** (update) tools — off by default |
 | `VIKUNJA_MCP_ALLOW_DELETE` | `1` to also expose **delete** (destructive) tools — off by default |
@@ -139,7 +139,7 @@ Published to npm as [`@eargollo/vikunja-mcp`](https://www.npmjs.com/package/@ear
 (with build provenance). Run it straight from the registry:
 
 ```bash
-VIKUNJA_URL=http://192.168.100.20:3456/api/v1 \
+VIKUNJA_URL=http://your-vikunja-host:3456/api/v1 \
 VIKUNJA_API_TOKEN=tk_... \
   npx @eargollo/vikunja-mcp
 ```
@@ -150,7 +150,7 @@ Or clone and run from source (no build step):
 git clone https://github.com/eargollo/vikunja-mcp
 cd vikunja-mcp
 npm install          # installs only @modelcontextprotocol/sdk
-VIKUNJA_URL=http://192.168.100.20:3456/api/v1 \
+VIKUNJA_URL=http://your-vikunja-host:3456/api/v1 \
 VIKUNJA_API_TOKEN=tk_... \
   node index.js
 ```
@@ -166,7 +166,7 @@ Add to `.mcp.json` in your project (or global MCP config):
       "command": "node",
       "args": ["/path/to/vikunja-mcp/index.js"],
       "env": {
-        "VIKUNJA_URL": "http://192.168.100.20:3456/api/v1",
+        "VIKUNJA_URL": "http://your-vikunja-host:3456/api/v1",
         "VIKUNJA_API_TOKEN": "tk_..."
       }
     }
@@ -174,19 +174,19 @@ Add to `.mcp.json` in your project (or global MCP config):
 }
 ```
 
-## Register in OpenClaw
+## Register in an MCP gateway (OpenClaw, etc.)
 
-Clone it into the gateway's persisted home, install, then point OpenClaw at the
-local file (no npm/npx at runtime):
+For a gateway that launches MCP servers as local processes, clone this repo into
+the gateway's persisted storage, `npm install`, and register the server pointing
+at `index.js` with your Vikunja env — no npm/npx at runtime. The exact command
+depends on your gateway; the shape is:
 
 ```bash
-# inside the persisted home, e.g. /home/openclaw/.openclaw/tools/vikunja-mcp
-sudo docker exec openclaw node dist/index.js mcp add vikunja \
+<gateway-cli> mcp add vikunja \
   --command node \
-  --arg /home/node/.openclaw/tools/vikunja-mcp/index.js \
-  --env VIKUNJA_URL=http://192.168.100.20:3456/api/v1 \
+  --arg /path/to/vikunja-mcp/index.js \
+  --env VIKUNJA_URL=http://your-vikunja-host:3456/api/v1 \
   --env VIKUNJA_API_TOKEN=tk_...
-sudo docker exec openclaw node dist/index.js mcp probe vikunja --json
 ```
 
 ## Tests
