@@ -67,7 +67,76 @@ test("each tool has the expected tier", () => {
     create_saved_filter: "additive",
     update_saved_filter: "write",
     delete_saved_filter: "delete",
+    list_notifications: "read",
+    mark_notification_read: "write",
+    subscribe: "additive",
+    unsubscribe: "delete",
   });
+});
+
+test("list_notifications maps into the paginated envelope", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/notifications");
+    return {
+      data: [{ id: 1, name: "task.assigned", read_at: "0001-01-01T00:00:00Z", created: "2026-01-01T00:00:00Z" }],
+      headers: headers({ "x-pagination-total-pages": "1" }),
+    };
+  };
+  const res = await byName(buildTools({ api }), "list_notifications").run({});
+  assert.deepEqual(res.items, [{ id: 1, name: "task.assigned", read: false, created: "2026-01-01T00:00:00Z" }]);
+});
+
+test("mark_notification_read POSTs { read } (default true), can mark unread", async () => {
+  const seen = [];
+  const api = async (method, path, body) => {
+    seen.push([method, path, body]);
+    return { data: {}, headers: headers() };
+  };
+  const tools = buildTools({ api });
+  assert.deepEqual(await byName(tools, "mark_notification_read").run({ notification_id: 3 }), {
+    notification_id: 3,
+    read: true,
+    marked: true,
+  });
+  await byName(tools, "mark_notification_read").run({ notification_id: 3, read: false });
+  assert.deepEqual(seen, [
+    ["POST", "/notifications/3", { read: true }],
+    ["POST", "/notifications/3", { read: false }],
+  ]);
+});
+
+test("subscribe validates entity + id and PUTs the subscription", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/subscriptions/task/7");
+    return { data: { id: 1, entity: "task", entity_id: 7 }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "subscribe").run({ entity: "task", entity_id: 7 });
+  assert.deepEqual(res, { entity: "task", entity_id: 7, subscribed: true });
+});
+
+test("subscribe rejects an unknown entity before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "subscribe").run({ entity: "label", entity_id: 7 }),
+    /entity must be one of/,
+  );
+  assert.equal(called, false);
+});
+
+test("unsubscribe DELETEs /subscriptions/{entity}/{id} and confirms", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/subscriptions/project/4");
+    return { data: { message: "ok" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "unsubscribe").run({ entity: "project", entity_id: 4 });
+  assert.deepEqual(res, { entity: "project", entity_id: 4, unsubscribed: true });
 });
 
 test("list_saved_filters extracts negative-id projects and maps to filter ids", async () => {
