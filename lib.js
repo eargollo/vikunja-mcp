@@ -72,7 +72,9 @@ export function requireFilename(value) {
 
 // Decode a base64 string to a Buffer for multipart upload. Rejects empty and
 // effectively-invalid input (base64 that decodes to nothing).
-export function decodeBase64(value, name = "content_base64") {
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MiB decoded
+
+export function decodeBase64(value, name = "content_base64", maxBytes = MAX_UPLOAD_BYTES) {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`${name} must be a base64-encoded string`);
   }
@@ -82,9 +84,13 @@ export function decodeBase64(value, name = "content_base64") {
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
     throw new Error(`${name} must be a base64-encoded string`);
   }
+  const maxEncoded = Math.ceil(maxBytes / 3) * 4;
+  if (normalized.length > maxEncoded) {
+    throw new Error(`${name} exceeds maximum size (${maxBytes} bytes decoded)`);
+  }
   const buf = Buffer.from(normalized, "base64");
-  if (buf.length === 0) {
-    throw new Error(`${name} must be a base64-encoded string`);
+  if (buf.length === 0 || buf.length > maxBytes) {
+    throw new Error(`${name} exceeds maximum size (${maxBytes} bytes decoded)`);
   }
   return buf;
 }
@@ -426,4 +432,33 @@ export function tierAllowed(tier, { allowWrite = false, allowDelete = false } = 
   if (tier === "write") return allowWrite;
   if (tier === "delete") return allowDelete;
   return false; // unknown/typo tier: stay hidden — never fail open
+}
+
+// Reversible association removals: delete-gated but not destructive in MCP hints.
+const REVERSIBLE_DELETE_TOOLS = new Set(["remove_label_from_task", "unassign_user"]);
+
+// Map tool tier (+ name for edge cases) to MCP tool annotations so hosts can
+// auto-approve reads and confirm true deletes.
+export function tierAnnotations(tier, toolName) {
+  if (tier === "read") {
+    return { readOnlyHint: true, destructiveHint: false };
+  }
+  if (tier === "delete") {
+    const reversible = REVERSIBLE_DELETE_TOOLS.has(toolName);
+    return { readOnlyHint: false, destructiveHint: !reversible };
+  }
+  return { readOnlyHint: false, destructiveHint: false };
+}
+
+export const SERVER_INSTRUCTIONS =
+  "vikunja-mcp exposes Vikunja through a tiered tool surface. By default only read and additive tools are available (list/get and create data for your token). Write tools — updates, sharing, webhooks, API tokens — require VIKUNJA_MCP_ALLOW_WRITE=1. Delete tools require VIKUNJA_MCP_ALLOW_DELETE=1. If a tool is missing, ask the user to enable the matching env flag rather than assuming it does not exist.";
+
+export function requireNodeMinVersion(minMajor = 20) {
+  const major = Number(process.versions.node.split(".")[0]);
+  if (!Number.isInteger(major) || major < minMajor) {
+    throw new Error(`vikunja-mcp requires Node.js >= ${minMajor} (got ${process.versions.node})`);
+  }
+  if (typeof File === "undefined") {
+    throw new Error(`vikunja-mcp requires Node.js >= ${minMajor} (File API missing)`);
+  }
 }

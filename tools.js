@@ -56,16 +56,16 @@ import {
 } from "./lib.js";
 
 const paginationSchema = {
-  page: { type: "number", description: "Page number (default: 1)" },
+  page: { type: "integer", description: "Page number (default: 1)" },
   per_page: {
-    type: "number",
+    type: "integer",
     description: "Items per page, 1-100 (Vikunja default if omitted)",
   },
 };
 
 const permissionSchema = {
   permission: {
-    type: "number",
+    type: "integer",
     description: "Access level: 0 read (default), 1 read+write, 2 admin",
     enum: [0, 1, 2],
   },
@@ -74,9 +74,13 @@ const permissionSchema = {
 const filterSortSchema = {
   filter: {
     type: "string",
-    description: 'Vikunja filter query, e.g. "done = false && priority >= 3".',
+    description:
+      'Vikunja filter query (not the same fields as sort_by). Combine with && and ||; compare with =, !=, <, >, <=, >=. Examples: "done = false", "priority >= 3 && due_date < now".',
   },
-  sort_by: { type: "string", description: "Field to sort by, e.g. due_date, priority." },
+  sort_by: {
+    type: "string",
+    description: "Bare Vikunja field name to sort by (e.g. due_date, priority). Direction goes in order, not here.",
+  },
   order: { type: "string", description: "Sort direction (asc or desc).", enum: ["asc", "desc"] },
 };
 
@@ -177,7 +181,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
+          project_id: { type: "integer", description: "Vikunja project id" },
           ...filterSortSchema,
           ...paginationSchema,
         },
@@ -237,7 +241,7 @@ export function buildTools({ api }) {
         "Get one task by id with its fields (description, done, dates, priority, percent_done, labels, assignees).",
       inputSchema: {
         type: "object",
-        properties: { task_id: { type: "number", description: "Vikunja task id" } },
+        properties: { task_id: { type: "integer", description: "Vikunja task id" } },
         required: ["task_id"],
         additionalProperties: false,
       },
@@ -258,10 +262,13 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
+          project_id: { type: "integer", description: "Vikunja project id" },
           title: { type: "string", description: "Task title" },
           description: { type: "string", description: "Task description" },
-          due_date: { type: "string", description: "Due date/time, ISO 8601 recommended (e.g. 2026-08-01T09:00:00Z)" },
+          due_date: {
+            type: "string",
+            description: "Due date/time, ISO 8601 required (e.g. 2026-08-01T09:00:00Z)",
+          },
           priority: { type: "number", description: "Priority 0-5 (0 = unset, 5 = DO NOW)" },
         },
         required: ["project_id", "title"],
@@ -291,11 +298,11 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
           title: { type: "string", description: "New title" },
           description: { type: "string", description: "New description" },
           done: { type: "boolean", description: "Mark done/undone" },
-          due_date: { type: "string", description: "Due date/time, ISO 8601 recommended" },
+          due_date: { type: "string", description: "Due date/time, ISO 8601 required" },
           priority: { type: "number", description: "Priority 0-5" },
         },
         required: ["task_id"],
@@ -330,7 +337,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
           done: { type: "boolean", description: "true to complete (default), false to reopen" },
         },
         required: ["task_id"],
@@ -347,13 +354,29 @@ export function buildTools({ api }) {
       },
     },
     {
+      name: "delete_task",
+      tier: "delete",
+      description: "Delete a task by id. Irreversible.",
+      inputSchema: {
+        type: "object",
+        properties: { task_id: { type: "integer", description: "Vikunja task id" } },
+        required: ["task_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id }) => {
+        const id = requireTaskId(task_id);
+        await api("DELETE", `/tasks/${id}`);
+        return okResult({ task_id: id });
+      },
+    },
+    {
       name: "get_project",
       tier: "read",
       description:
         "Get one project by id (title, description, identifier, parent, archived/favorite flags).",
       inputSchema: {
         type: "object",
-        properties: { project_id: { type: "number", description: "Vikunja project id" } },
+        properties: { project_id: { type: "integer", description: "Vikunja project id" } },
         required: ["project_id"],
         additionalProperties: false,
       },
@@ -376,7 +399,7 @@ export function buildTools({ api }) {
         properties: {
           title: { type: "string", description: "Project title" },
           description: { type: "string", description: "Project description" },
-          parent_project_id: { type: "number", description: "Parent project id (omit for top level)" },
+          parent_project_id: { type: "integer", description: "Parent project id (omit for top level)" },
         },
         required: ["title"],
         additionalProperties: false,
@@ -402,10 +425,10 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
+          project_id: { type: "integer", description: "Vikunja project id" },
           title: { type: "string", description: "New title" },
           description: { type: "string", description: "New description" },
-          parent_project_id: { type: "number", description: "New parent (0 = top level)" },
+          parent_project_id: { type: "integer", description: "New parent (0 = top level)" },
         },
         required: ["project_id"],
         additionalProperties: false,
@@ -431,7 +454,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
+          project_id: { type: "integer", description: "Vikunja project id" },
           archived: { type: "boolean", description: "true to archive (default), false to unarchive" },
         },
         required: ["project_id"],
@@ -449,7 +472,7 @@ export function buildTools({ api }) {
       description: "Delete a project by id (and its tasks). Irreversible.",
       inputSchema: {
         type: "object",
-        properties: { project_id: { type: "number", description: "Vikunja project id" } },
+        properties: { project_id: { type: "integer", description: "Vikunja project id" } },
         required: ["project_id"],
         additionalProperties: false,
       },
@@ -509,8 +532,8 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
-          label_id: { type: "number", description: "Vikunja label id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
+          label_id: { type: "integer", description: "Vikunja label id" },
         },
         required: ["task_id", "label_id"],
         additionalProperties: false,
@@ -534,8 +557,8 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
-          label_id: { type: "number", description: "Vikunja label id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
+          label_id: { type: "integer", description: "Vikunja label id" },
         },
         required: ["task_id", "label_id"],
         additionalProperties: false,
@@ -570,7 +593,7 @@ export function buildTools({ api }) {
       description: "List the users assigned to a task (id, username, name).",
       inputSchema: {
         type: "object",
-        properties: { task_id: { type: "number", description: "Vikunja task id" } },
+        properties: { task_id: { type: "integer", description: "Vikunja task id" } },
         required: ["task_id"],
         additionalProperties: false,
       },
@@ -592,8 +615,8 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
-          user_id: { type: "number", description: "Vikunja user id (see search_users)" },
+          task_id: { type: "integer", description: "Vikunja task id" },
+          user_id: { type: "integer", description: "Vikunja user id (see search_users)" },
         },
         required: ["task_id", "user_id"],
         additionalProperties: false,
@@ -612,8 +635,8 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
-          user_id: { type: "number", description: "Vikunja user id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
+          user_id: { type: "integer", description: "Vikunja user id" },
         },
         required: ["task_id", "user_id"],
         additionalProperties: false,
@@ -633,7 +656,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
           ...paginationSchema,
         },
         required: ["task_id"],
@@ -656,7 +679,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
           comment: { type: "string", description: "Comment text" },
         },
         required: ["task_id", "comment"],
@@ -679,8 +702,8 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
-          comment_id: { type: "number", description: "Vikunja comment id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
+          comment_id: { type: "integer", description: "Vikunja comment id" },
         },
         required: ["task_id", "comment_id"],
         additionalProperties: false,
@@ -699,7 +722,7 @@ export function buildTools({ api }) {
         "List a task's relations, grouped by kind (subtask, blocking, related, ...) → tasks {id, title, done}.",
       inputSchema: {
         type: "object",
-        properties: { task_id: { type: "number", description: "Vikunja task id" } },
+        properties: { task_id: { type: "integer", description: "Vikunja task id" } },
         required: ["task_id"],
         additionalProperties: false,
       },
@@ -716,13 +739,18 @@ export function buildTools({ api }) {
       name: "create_task_relation",
       tier: "additive",
       description:
-        "Relate a task to another task. relation_kind is the relation from task_id's perspective (e.g. blocking, subtask, related).",
+        "Relate a task to another task. relation_kind is from task_id's perspective: blocking means task_id blocks other_task_id; subtask means task_id is a subtask of other_task_id; related, duplicate, and parenttask follow the same directionality.",
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
-          other_task_id: { type: "number", description: "The other task's id" },
-          relation_kind: { type: "string", description: "Relation kind", enum: RELATION_KINDS },
+          task_id: { type: "integer", description: "Vikunja task id" },
+          other_task_id: { type: "integer", description: "The other task's id" },
+          relation_kind: {
+            type: "string",
+            description:
+              "Relation from task_id toward other_task_id (blocking: task_id blocks other_task_id)",
+            enum: RELATION_KINDS,
+          },
         },
         required: ["task_id", "other_task_id", "relation_kind"],
         additionalProperties: false,
@@ -742,9 +770,14 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
-          other_task_id: { type: "number", description: "The other task's id" },
-          relation_kind: { type: "string", description: "Relation kind", enum: RELATION_KINDS },
+          task_id: { type: "integer", description: "Vikunja task id" },
+          other_task_id: { type: "integer", description: "The other task's id" },
+          relation_kind: {
+            type: "string",
+            description:
+              "Relation from task_id toward other_task_id (blocking: task_id blocks other_task_id)",
+            enum: RELATION_KINDS,
+          },
         },
         required: ["task_id", "other_task_id", "relation_kind"],
         additionalProperties: false,
@@ -765,7 +798,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
           ...paginationSchema,
         },
         required: ["task_id"],
@@ -789,7 +822,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
           filename: { type: "string", description: "Name to store the file as" },
           content_base64: { type: "string", description: "File contents, base64-encoded" },
         },
@@ -819,8 +852,8 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          task_id: { type: "number", description: "Vikunja task id" },
-          attachment_id: { type: "number", description: "Vikunja attachment id" },
+          task_id: { type: "integer", description: "Vikunja task id" },
+          attachment_id: { type: "integer", description: "Vikunja attachment id" },
         },
         required: ["task_id", "attachment_id"],
         additionalProperties: false,
@@ -839,7 +872,7 @@ export function buildTools({ api }) {
         "List the kanban buckets of a project (id, title, task limit, task count). Resolves the project's first kanban view automatically.",
       inputSchema: {
         type: "object",
-        properties: { project_id: { type: "number", description: "Vikunja project id" } },
+        properties: { project_id: { type: "integer", description: "Vikunja project id" } },
         required: ["project_id"],
         additionalProperties: false,
       },
@@ -857,7 +890,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
+          project_id: { type: "integer", description: "Vikunja project id" },
           title: { type: "string", description: "Bucket title" },
         },
         required: ["project_id", "title"],
@@ -883,9 +916,9 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
-          bucket_id: { type: "number", description: "Target bucket id (see list_buckets)" },
-          task_id: { type: "number", description: "Task to move" },
+          project_id: { type: "integer", description: "Vikunja project id" },
+          bucket_id: { type: "integer", description: "Target bucket id (see list_buckets)" },
+          task_id: { type: "integer", description: "Task to move" },
         },
         required: ["project_id", "bucket_id", "task_id"],
         additionalProperties: false,
@@ -941,8 +974,8 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
-          user_id: { type: "number", description: "Vikunja user id (see search_users)" },
+          project_id: { type: "integer", description: "Vikunja project id" },
+          user_id: { type: "integer", description: "Vikunja user id (see search_users)" },
           ...permissionSchema,
         },
         required: ["project_id", "user_id"],
@@ -967,8 +1000,8 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
-          team_id: { type: "number", description: "Vikunja team id (see list_teams)" },
+          project_id: { type: "integer", description: "Vikunja project id" },
+          team_id: { type: "integer", description: "Vikunja team id (see list_teams)" },
           ...permissionSchema,
         },
         required: ["project_id", "team_id"],
@@ -991,7 +1024,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
+          project_id: { type: "integer", description: "Vikunja project id" },
           ...permissionSchema,
         },
         required: ["project_id"],
@@ -1059,7 +1092,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          filter_id: { type: "number", description: "Saved filter id" },
+          filter_id: { type: "integer", description: "Saved filter id" },
           title: { type: "string", description: "New title" },
           filter: { type: "string", description: "New Vikunja filter query" },
           description: { type: "string", description: "New description" },
@@ -1088,7 +1121,7 @@ export function buildTools({ api }) {
       description: "Delete a saved filter by id.",
       inputSchema: {
         type: "object",
-        properties: { filter_id: { type: "number", description: "Saved filter id" } },
+        properties: { filter_id: { type: "integer", description: "Saved filter id" } },
         required: ["filter_id"],
         additionalProperties: false,
       },
@@ -1120,7 +1153,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          notification_id: { type: "number", description: "Vikunja notification id" },
+          notification_id: { type: "integer", description: "Vikunja notification id" },
           read: { type: "boolean", description: "true to mark read (default), false to mark unread" },
         },
         required: ["notification_id"],
@@ -1144,7 +1177,7 @@ export function buildTools({ api }) {
         type: "object",
         properties: {
           entity: { type: "string", description: "What to subscribe to", enum: SUBSCRIBABLE_ENTITIES },
-          entity_id: { type: "number", description: "Id of the project or task" },
+          entity_id: { type: "integer", description: "Id of the project or task" },
         },
         required: ["entity", "entity_id"],
         additionalProperties: false,
@@ -1164,7 +1197,7 @@ export function buildTools({ api }) {
         type: "object",
         properties: {
           entity: { type: "string", description: "What to unsubscribe from", enum: SUBSCRIBABLE_ENTITIES },
-          entity_id: { type: "number", description: "Id of the project or task" },
+          entity_id: { type: "integer", description: "Id of the project or task" },
         },
         required: ["entity", "entity_id"],
         additionalProperties: false,
@@ -1212,15 +1245,16 @@ export function buildTools({ api }) {
       // like other additive tools; the secret is out the moment it's created.
       tier: "write",
       description:
-        "Create a Vikunja API token. Requires a title, an expires_at (ISO 8601), and a non-empty permissions map (resource group -> action array, e.g. {\"tasks\":[\"read_all\"]}; see Vikunja's GET /routes). Returns the token secret ONCE — treat it as sensitive; it can't be retrieved later.",
+        'Create a Vikunja API token. Requires a title, expires_at (ISO 8601 required), and a non-empty permissions map: resource group -> action array. Common groups: "tasks", "projects", "teams", "labels"; common actions: "read_all", "read_one", "create", "update", "delete". Example: {"tasks":["read_all","create"],"projects":["read_all"]}. Returns the token secret ONCE — treat it as sensitive; it cannot be retrieved later.',
       inputSchema: {
         type: "object",
         properties: {
           title: { type: "string", description: "Token title" },
-          expires_at: { type: "string", description: "Expiry, ISO 8601 (required by Vikunja)" },
+          expires_at: { type: "string", description: "Expiry, ISO 8601 required (e.g. 2027-01-01T00:00:00Z)" },
           permissions: {
             type: "object",
-            description: 'Resource group -> allowed actions, e.g. {"tasks":["read_all","read_one"]}',
+            description:
+              'Resource group -> allowed actions, e.g. {"tasks":["read_all","read_one","create"],"projects":["read_all"]}',
           },
         },
         required: ["title", "expires_at", "permissions"],
@@ -1247,7 +1281,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
+          project_id: { type: "integer", description: "Vikunja project id" },
           ...paginationSchema,
         },
         required: ["project_id"],
@@ -1272,7 +1306,7 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
+          project_id: { type: "integer", description: "Vikunja project id" },
           target_url: { type: "string", description: "HTTP(S) URL to POST events to (a trailing slash is stripped)" },
           events: {
             type: "array",
@@ -1310,8 +1344,8 @@ export function buildTools({ api }) {
       inputSchema: {
         type: "object",
         properties: {
-          project_id: { type: "number", description: "Vikunja project id" },
-          webhook_id: { type: "number", description: "Vikunja webhook id" },
+          project_id: { type: "integer", description: "Vikunja project id" },
+          webhook_id: { type: "integer", description: "Vikunja webhook id" },
         },
         required: ["project_id", "webhook_id"],
         additionalProperties: false,

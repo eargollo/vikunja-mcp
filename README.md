@@ -11,7 +11,7 @@ This one is the opposite:
 
 - **One dependency** — the official `@modelcontextprotocol/sdk`. All HTTP uses
   Node's built-in `fetch`. No API client libs, no transitive surface.
-- **One egress point** — every request goes through a single `api()` function
+- **One egress point** — every request goes through `makeApi()` in `api.js`
   that only ever calls `VIKUNJA_URL` with your token. Grep it; that's the whole
   network surface.
 - **Scoped: read + additive only** — list and create tools that affect only the
@@ -65,6 +65,7 @@ This one is the opposite:
 | `mark_notification_read` | write | `POST /notifications/{id}` |
 | `create_api_token` | write | `PUT /tokens` |
 | `set_task_done` | write | `POST /tasks/{id}` |
+| `delete_task` | delete | `DELETE /tasks/{id}` |
 | `update_project` | write | `POST /projects/{id}` |
 | `archive_project` | write | `POST /projects/{id}` |
 | `create_label` | additive | `PUT /labels` |
@@ -85,11 +86,14 @@ to its configured maximum, so rely on `total_pages` rather than the returned pag
 size.
 
 `list_tasks` and `list_all_tasks` also take an optional `filter` (a Vikunja
-filter query like `done = false && priority >= 3`), `sort_by` (a field name), and
+filter query — combine predicates with `&&` / `||`, compare with `=`, `!=`,
+`<`, `>`, `<=`, `>=`; filter fields are not the same as `sort_by` fields),
+`sort_by` (a bare Vikunja field name; direction goes in `order`, not here), and
 `order` (`asc`/`desc`). `get_task` returns a task's full detail (description,
 dates, priority, percent_done, labels, assignees). `create_task` takes optional
-`description`, `due_date`, and `priority`. `update_task` (write) changes only
-the fields you pass; `set_task_done` (write) completes or reopens a task.
+`description`, `due_date` (ISO 8601 required), and `priority`. `update_task`
+(write) changes only the fields you pass; `set_task_done` (write) completes or
+reopens a task; `delete_task` (delete) removes a task permanently.
 
 Add tools deliberately — the tool list lives in the `buildTools` factory in
 `tools.js`, and `index.js` only exposes the tiers its env flags permit.
@@ -135,7 +139,7 @@ data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 | Area | Status |
 | --- | --- |
 | Projects — list, create | ✅ shipped |
-| Tasks — list, create | ✅ shipped |
+| Tasks — list, create, delete | ✅ shipped |
 | Task detail & filtering (`get_task`, `list_all_tasks`, filter/sort) | ✅ shipped |
 | Rich task create & update (`update_task`, `set_task_done`, create fields) | ✅ shipped |
 | Projects — get, create, update, archive, delete | ✅ shipped |
@@ -164,7 +168,11 @@ Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
 
 Read and additive tools are always available. Mutating and destructive tools
 are registered only when the matching flag is set (`1`/`true`/`yes`/`on`), so a
-default install can read and add but never modify or destroy.
+default install can read and add but never modify or destroy. The server advertises
+its posture via MCP `instructions` and per-tool `annotations` (`readOnlyHint`,
+`destructiveHint`) so hosts can auto-approve reads and confirm deletes.
+
+`subscribe` / `unsubscribe` take `entity` (`project` or `task`) and `entity_id`.
 
 ## Run it
 

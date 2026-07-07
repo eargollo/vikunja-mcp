@@ -35,6 +35,7 @@ test("each tool has the expected tier", () => {
     create_project: "additive",
     update_task: "write",
     set_task_done: "write",
+    delete_task: "delete",
     update_project: "write",
     archive_project: "write",
     delete_project: "delete",
@@ -940,6 +941,29 @@ test("delete_project DELETEs and confirms", async () => {
   };
   const res = await byName(buildTools({ api }), "delete_project").run({ project_id: 4 });
   assert.deepEqual(res, { ok: true, project_id: 4 });
+});
+
+test("delete_task DELETEs /tasks/{id} and confirms", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/tasks/7");
+    return { data: null, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "delete_task").run({ task_id: 7 });
+  assert.deepEqual(res, { ok: true, task_id: 7 });
+});
+
+test("delete_task validates id before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "delete_task").run({ task_id: 0 }),
+    /positive integer/,
+  );
+  assert.equal(called, false);
 });
 
 test("delete_project validates id before calling the api", async () => {
