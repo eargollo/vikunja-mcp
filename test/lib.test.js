@@ -42,6 +42,7 @@ import {
   attachmentSummary,
   bucketSummary,
   optionalPermission,
+  savedFilterDetail,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -412,6 +413,25 @@ test("optionalPermission accepts 0/1/2, rejects out-of-range and non-integers", 
   for (const bad of [-1, 3, 1.5, "x"]) {
     assert.throws(() => optionalPermission(bad), /permission must be/, `reject ${String(bad)}`);
   }
+});
+
+test("savedFilterDetail curates id/title/description/filter", () => {
+  assert.deepEqual(
+    savedFilterDetail({
+      id: 3,
+      title: "Urgent",
+      description: "d",
+      filters: { s: "", sort_by: null, filter: "priority >= 4", filter_include_nulls: false },
+      owner: {},
+    }),
+    { id: 3, title: "Urgent", description: "d", filter: "priority >= 4" },
+  );
+  assert.deepEqual(savedFilterDetail({ id: 1, title: "x" }), {
+    id: 1,
+    title: "x",
+    description: "",
+    filter: "",
+  });
 });
 
 test("bucketSummary curates id/title/limit/count with numeric defaults", () => {

@@ -37,6 +37,7 @@ This one is the opposite:
 | `list_task_attachments` | read | `GET /tasks/{id}/attachments` |
 | `list_buckets` | read | `GET /projects/{id}/views/{view}/buckets` |
 | `list_teams` | read | `GET /teams` |
+| `list_saved_filters` | read | `GET /projects` (negative ids) |
 | `create_project` | additive | `PUT /projects` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 | `add_label_to_task` | additive | `PUT /tasks/{id}/labels` |
@@ -50,7 +51,9 @@ This one is the opposite:
 | `share_project_with_user` | additive | `PUT /projects/{id}/users` |
 | `share_project_with_team` | additive | `PUT /projects/{id}/teams` |
 | `create_link_share` | additive | `PUT /projects/{id}/shares` |
+| `create_saved_filter` | additive | `PUT /filters` |
 | `move_task_to_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucket_id}/tasks` |
+| `update_saved_filter` | write | `POST /filters/{id}` |
 | `set_task_done` | write | `POST /tasks/{id}` |
 | `update_project` | write | `POST /projects/{id}` |
 | `archive_project` | write | `POST /projects/{id}` |
@@ -61,6 +64,7 @@ This one is the opposite:
 | `delete_task_comment` | delete | `DELETE /tasks/{id}/comments/{commentId}` |
 | `delete_task_relation` | delete | `DELETE /tasks/{id}/relations/{kind}/{otherId}` |
 | `delete_task_attachment` | delete | `DELETE /tasks/{id}/attachments/{attachmentId}` |
+| `delete_saved_filter` | delete | `DELETE /filters/{id}` |
 
 `list_projects`, `list_tasks`, and `list_all_tasks` support optional `page` and
 `per_page`. Responses include `{ page, total_pages, count, items }`; paginate by
@@ -124,7 +128,7 @@ data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 | Attachments (list/upload/delete, base64 upload) | ✅ shipped |
 | Kanban buckets (list/create, move task) | ✅ shipped |
 | Teams & sharing (teams, user/team/link shares) | ✅ shipped |
-| Saved filters | 🔜 [#15](https://github.com/eargollo/vikunja-mcp/issues/15) |
+| Saved filters (list/create/update/delete) | ✅ shipped |
 | Subscriptions & notifications | 🔜 [#16](https://github.com/eargollo/vikunja-mcp/issues/16) |
 | Current user & API tokens | 🔜 [#17](https://github.com/eargollo/vikunja-mcp/issues/17) |
 | Webhooks | 🔜 [#18](https://github.com/eargollo/vikunja-mcp/issues/18) |
