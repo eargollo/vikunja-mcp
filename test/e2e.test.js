@@ -157,6 +157,31 @@ test("VIKUNJA_MCP_ALLOW_WRITE exposes the write tools without dropping the basel
   assert.ok(names.has("set_task_done"), "set_task_done appears when write is enabled");
 });
 
+test("tools/list advertises titles and tier-derived annotations", { skip }, async () => {
+  const tools = Object.fromEntries((await client.listTools()).tools.map((t) => [t.name, t]));
+  assert.equal(tools.list_projects.title, "List Projects", "tools carry a display title");
+  // read tool → read-only, non-destructive
+  assert.equal(tools.list_projects.annotations?.readOnlyHint, true);
+  assert.equal(tools.list_projects.annotations?.destructiveHint, false);
+  // additive tool → not read-only, not destructive
+  assert.equal(tools.create_task.annotations?.readOnlyHint, false);
+  assert.equal(tools.create_task.annotations?.destructiveHint, false);
+
+  // delete tools (gated) advertise destructive + idempotent; reversible ones don't
+  const wtools = Object.fromEntries((await (await getWriteClient()).listTools()).tools.map((t) => [t.name, t]));
+  assert.equal(wtools.delete_project.annotations?.destructiveHint, true);
+  assert.equal(wtools.delete_project.annotations?.idempotentHint, true);
+  assert.equal(wtools.remove_label_from_task.annotations?.destructiveHint, false, "reversible delete");
+});
+
+test("call results include structuredContent mirroring the text payload", { skip }, async () => {
+  const res = await client.callTool({ name: "list_projects", arguments: {} });
+  assert.ok(!res.isError);
+  assert.ok(res.structuredContent && typeof res.structuredContent === "object", "structuredContent present");
+  assert.ok(Array.isArray(res.structuredContent.items), "structuredContent.items is an array");
+  assert.deepEqual(res.structuredContent, JSON.parse(res.content[0].text), "structured matches text");
+});
+
 test("list_projects returns a paginated envelope with the seeded Inbox", { skip }, async () => {
   const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
   assert.ok(Array.isArray(projects.items), "items should be an array");

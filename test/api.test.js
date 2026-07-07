@@ -94,6 +94,18 @@ test("makeApi throws generic message on 5xx", async () => {
   await assert.rejects(() => api("GET", "/projects"), /500: server error/);
 });
 
+test("makeApi surfaces 401/403 as an authentication error", async () => {
+  for (const status of [401, 403]) {
+    const api = makeApi({
+      base: BASE,
+      token: TOKEN,
+      fetch: async () => mockResponse({ status, body: "invalid token" }),
+      logError: () => {},
+    });
+    await assert.rejects(() => api("GET", "/projects"), /authentication failed — check VIKUNJA_API_TOKEN/);
+  }
+});
+
 test("makeApi omits sensitive 4xx bodies from logs and thrown detail", async () => {
   const logs = [];
   const api = makeApi({
