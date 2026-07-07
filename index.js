@@ -86,7 +86,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const tool = TOOLS.find((t) => t.name === req.params.name);
     if (!tool) throw new Error(`Unknown tool: ${req.params.name}`);
     const result = await tool.run(req.params.arguments ?? {});
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    // Every tool returns a JSON object, so also expose it as structuredContent
+    // for clients that consume typed output; keep the text block for back-compat.
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      structuredContent: result,
+    };
   } catch (err) {
     return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
   }

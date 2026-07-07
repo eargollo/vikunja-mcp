@@ -5,6 +5,17 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Unreleased
 
+### Added
+
+- Tool results now include MCP `structuredContent` (the raw result object)
+  alongside the text block, so clients can consume typed output without
+  re-parsing.
+
+### Tests
+
+- e2e now asserts `tools/list` emits titles + tier-derived annotations, and that
+  `structuredContent` mirrors the text payload.
+
 ## 1.0.1 - 2026-07-07
 
 ### Fixed / hardened
