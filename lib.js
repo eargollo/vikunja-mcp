@@ -59,6 +59,30 @@ export function requireQuery(value) {
   return value.trim();
 }
 
+export function requireCommentId(value) {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("comment_id must be a positive integer");
+  }
+  return id;
+}
+
+export function requireComment(value) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error("comment must not be empty");
+  }
+  return value.trim();
+}
+
+export function commentSummary(c) {
+  return {
+    id: c.id,
+    comment: c.comment,
+    author: c.author?.username ?? null,
+    created: c.created ?? null,
+  };
+}
+
 export function optionalHexColor(value) {
   if (value === undefined) return undefined;
   if (typeof value !== "string") {

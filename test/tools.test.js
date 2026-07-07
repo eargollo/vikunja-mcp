@@ -46,7 +46,57 @@ test("each tool has the expected tier", () => {
     list_task_assignees: "read",
     assign_user: "additive",
     unassign_user: "delete",
+    list_task_comments: "read",
+    add_task_comment: "additive",
+    delete_task_comment: "delete",
   });
+});
+
+test("list_task_comments maps comments into the paginated envelope", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/tasks/7/comments?per_page=20");
+    return {
+      data: [{ id: 1, comment: "hi", author: { username: "me" }, created: "2026-01-01T00:00:00Z" }],
+      headers: headers({ "x-pagination-total-pages": "1" }),
+    };
+  };
+  const res = await byName(buildTools({ api }), "list_task_comments").run({ task_id: 7, per_page: 20 });
+  assert.deepEqual(res.items, [{ id: 1, comment: "hi", author: "me", created: "2026-01-01T00:00:00Z" }]);
+});
+
+test("add_task_comment validates and PUTs { comment }, returns the summary", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/tasks/7/comments");
+    assert.deepEqual(body, { comment: "hello" });
+    return { data: { id: 9, comment: "hello", author: { username: "me" } }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "add_task_comment").run({ task_id: 7, comment: "  hello  " });
+  assert.deepEqual(res, { id: 9, comment: "hello", author: "me", created: null });
+});
+
+test("add_task_comment rejects an empty comment before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "add_task_comment").run({ task_id: 7, comment: "   " }),
+    /comment must not be empty/,
+  );
+  assert.equal(called, false);
+});
+
+test("delete_task_comment DELETEs /tasks/{id}/comments/{commentId} and confirms", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/tasks/7/comments/9");
+    return { data: { message: "ok" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "delete_task_comment").run({ task_id: 7, comment_id: 9 });
+  assert.deepEqual(res, { task_id: 7, comment_id: 9, deleted: true });
 });
 
 test("search_users hits /users?s= and maps id/username/name; null → []", async () => {

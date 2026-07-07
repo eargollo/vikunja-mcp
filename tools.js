@@ -10,10 +10,13 @@ import {
   requireTaskId,
   requireLabelId,
   requireUserId,
+  requireCommentId,
+  requireComment,
   requireTitle,
   requireQuery,
   optionalHexColor,
   userSummary,
+  commentSummary,
   optionalPage,
   optionalPerPage,
   optionalFilter,
@@ -556,6 +559,73 @@ export function buildTools({ api }) {
         const uid = requireUserId(user_id);
         await api("DELETE", `/tasks/${tid}/assignees/${uid}`);
         return { task_id: tid, user_id: uid, unassigned: true };
+      },
+    },
+    {
+      name: "list_task_comments",
+      tier: "read",
+      description:
+        "List a task's comments (id, comment, author, created). Paginated; request successive pages while page < total_pages.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          ...paginationSchema,
+        },
+        required: ["task_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, page, per_page }) => {
+        const tid = requireTaskId(task_id);
+        const resolvedPage = optionalPage(page);
+        const resolvedPerPage = optionalPerPage(per_page);
+        const query = buildQuery({ page: resolvedPage, per_page: resolvedPerPage });
+        const { data, headers } = await api("GET", `/tasks/${tid}/comments${query}`);
+        const items = (data ?? []).map(commentSummary);
+        return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
+      },
+    },
+    {
+      name: "add_task_comment",
+      tier: "additive",
+      description: "Add a comment to a task.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          comment: { type: "string", description: "Comment text" },
+        },
+        required: ["task_id", "comment"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, comment }) => {
+        const tid = requireTaskId(task_id);
+        const text = requireComment(comment);
+        const { data } = await api("PUT", `/tasks/${tid}/comments`, { comment: text });
+        if (!data || data.id == null) {
+          throw new Error("Vikunja returned an empty comment response");
+        }
+        return commentSummary(data);
+      },
+    },
+    {
+      name: "delete_task_comment",
+      tier: "delete",
+      description: "Delete a comment from a task.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          comment_id: { type: "number", description: "Vikunja comment id" },
+        },
+        required: ["task_id", "comment_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, comment_id }) => {
+        const tid = requireTaskId(task_id);
+        const cid = requireCommentId(comment_id);
+        await api("DELETE", `/tasks/${tid}/comments/${cid}`);
+        return { task_id: tid, comment_id: cid, deleted: true };
       },
     },
   ];

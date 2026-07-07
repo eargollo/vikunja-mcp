@@ -32,10 +32,12 @@ This one is the opposite:
 | `list_labels` | read | `GET /labels` |
 | `search_users` | read | `GET /users?s=` |
 | `list_task_assignees` | read | `GET /tasks/{id}` |
+| `list_task_comments` | read | `GET /tasks/{id}/comments` |
 | `create_project` | additive | `PUT /projects` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 | `add_label_to_task` | additive | `PUT /tasks/{id}/labels` |
 | `assign_user` | additive | `PUT /tasks/{id}/assignees` |
+| `add_task_comment` | additive | `PUT /tasks/{id}/comments` |
 | `update_task` | write | `POST /tasks/{id}` |
 | `set_task_done` | write | `POST /tasks/{id}` |
 | `update_project` | write | `POST /projects/{id}` |
@@ -44,6 +46,7 @@ This one is the opposite:
 | `delete_project` | delete | `DELETE /projects/{id}` |
 | `remove_label_from_task` | delete | `DELETE /tasks/{id}/labels/{labelId}` |
 | `unassign_user` | delete | `DELETE /tasks/{id}/assignees/{userId}` |
+| `delete_task_comment` | delete | `DELETE /tasks/{id}/comments/{commentId}` |
 
 `list_projects`, `list_tasks`, and `list_all_tasks` support optional `page` and
 `per_page`. Responses include `{ page, total_pages, count, items }`; paginate by
@@ -102,7 +105,7 @@ data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 | Projects — get, create, update, archive, delete | ✅ shipped |
 | Labels (`list`/`create_label`, add/remove on tasks) | ✅ shipped |
 | Assignees (`search_users`, list/assign/unassign) | ✅ shipped |
-| Comments | 🔜 [#10](https://github.com/eargollo/vikunja-mcp/issues/10) |
+| Task comments (list/add/delete) | ✅ shipped |
 | Task relations | 🔜 [#11](https://github.com/eargollo/vikunja-mcp/issues/11) |
 | Attachments | 🔜 [#12](https://github.com/eargollo/vikunja-mcp/issues/12) |
 | Kanban buckets | 🔜 [#13](https://github.com/eargollo/vikunja-mcp/issues/13) |
