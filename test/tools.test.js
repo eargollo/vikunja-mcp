@@ -74,7 +74,71 @@ test("each tool has the expected tier", () => {
     get_current_user: "read",
     list_api_tokens: "read",
     create_api_token: "write",
+    list_webhooks: "read",
+    create_webhook: "additive",
+    delete_webhook: "delete",
   });
+});
+
+test("list_webhooks maps id/target_url/events into the paginated envelope", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/projects/4/webhooks");
+    return {
+      data: [{ id: 1, target_url: "https://x/hook", events: ["task.created"], secret: "s" }],
+      headers: headers({ "x-pagination-total-pages": "1" }),
+    };
+  };
+  const res = await byName(buildTools({ api }), "list_webhooks").run({ project_id: 4 });
+  assert.deepEqual(res.items, [{ id: 1, target_url: "https://x/hook", events: ["task.created"] }]);
+});
+
+test("create_webhook validates url + events and PUTs them (+ optional secret)", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/projects/4/webhooks");
+    assert.deepEqual(body, {
+      target_url: "https://example.com/hook",
+      events: ["task.created"],
+      secret: "sh",
+    });
+    return { data: { id: 8, target_url: "https://example.com/hook", events: ["task.created"] }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "create_webhook").run({
+    project_id: 4,
+    target_url: "https://example.com/hook",
+    events: ["task.created"],
+    secret: "sh",
+  });
+  assert.deepEqual(res, { id: 8, target_url: "https://example.com/hook", events: ["task.created"] });
+});
+
+test("create_webhook rejects a non-http url and empty events before the api call", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  const tools = buildTools({ api });
+  await assert.rejects(
+    () => byName(tools, "create_webhook").run({ project_id: 4, target_url: "ftp://x", events: ["task.created"] }),
+    /http or https/,
+  );
+  await assert.rejects(
+    () => byName(tools, "create_webhook").run({ project_id: 4, target_url: "https://x", events: [] }),
+    /events must be/,
+  );
+  assert.equal(called, false);
+});
+
+test("delete_webhook DELETEs /projects/{id}/webhooks/{webhookId} and confirms", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/projects/4/webhooks/8");
+    return { data: { message: "ok" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "delete_webhook").run({ project_id: 4, webhook_id: 8 });
+  assert.deepEqual(res, { project_id: 4, webhook_id: 8, deleted: true });
 });
 
 test("get_current_user fetches /user and returns the user summary", async () => {

@@ -141,6 +141,18 @@ export function tokenSummary(t) {
   };
 }
 
+export function requireEvents(value) {
+  if (!Array.isArray(value) || value.length === 0 || !value.every((e) => typeof e === "string")) {
+    throw new Error("events must be a non-empty array of event names (see Vikunja's GET /webhooks/events)");
+  }
+  return value;
+}
+
+export function webhookSummary(w) {
+  // Never echoes `secret`/`basic_auth_password`.
+  return { id: w.id, target_url: w.target_url, events: w.events ?? [] };
+}
+
 // Entities a user can subscribe to for notifications.
 export const SUBSCRIBABLE_ENTITIES = ["project", "task"];
 

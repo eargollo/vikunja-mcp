@@ -82,6 +82,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "create_task",
     "create_task_relation",
     "create_team",
+    "create_webhook",
     "get_current_user",
     "get_project",
     "get_task",
@@ -98,6 +99,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "list_task_relations",
     "list_tasks",
     "list_teams",
+    "list_webhooks",
     "search_users",
     "share_project_with_team",
     "share_project_with_user",
@@ -121,6 +123,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "mark_notification_read",
     "unsubscribe",
     "create_api_token",
+    "delete_webhook",
   ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
@@ -578,6 +581,35 @@ test("share_project_with_team and create_link_share succeed", { skip }, async ()
 test("list_notifications returns a (possibly empty) list without error", { skip }, async () => {
   const res = parse(await client.callTool({ name: "list_notifications", arguments: {} }));
   assert.ok(Array.isArray(res.items), "items should be an array");
+});
+
+test("create_webhook, list_webhooks, delete_webhook round-trip", { skip }, async () => {
+  const wc = await getWriteClient(); // delete_webhook is delete-tier
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const pid = projects.items[0].id;
+  const url = `https://example.com/hook/${process.hrtime.bigint()}`;
+  const created = parse(
+    await client.callTool({
+      name: "create_webhook",
+      arguments: { project_id: pid, target_url: url, events: ["task.created"], secret: "s3cr3t" },
+    }),
+  );
+  assert.ok(Number.isInteger(created.id));
+  assert.equal(created.target_url, url);
+  assert.deepEqual(created.events, ["task.created"]);
+  assert.ok(!("secret" in created), "the secret is never returned");
+
+  const list = parse(await client.callTool({ name: "list_webhooks", arguments: { project_id: pid } }));
+  assert.ok(list.items.some((w) => w.id === created.id), "webhook appears in list");
+
+  const del = parse(await wc.callTool({ name: "delete_webhook", arguments: { project_id: pid, webhook_id: created.id } }));
+  assert.deepEqual(del, { project_id: pid, webhook_id: created.id, deleted: true });
+});
+
+test("delete_webhook is not callable without the delete flag", { skip }, async () => {
+  const result = await client.callTool({ name: "delete_webhook", arguments: { project_id: 1, webhook_id: 1 } });
+  assert.ok(result.isError, "delete tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
 });
 
 test("get_current_user returns the token owner", { skip }, async () => {

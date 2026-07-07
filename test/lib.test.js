@@ -49,6 +49,8 @@ import {
   requireExpiresAt,
   requirePermissionsMap,
   tokenSummary,
+  requireEvents,
+  webhookSummary,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -433,6 +435,31 @@ test("tokenSummary curates id/title/expires_at/permissions (never the secret)", 
     { id: 1, title: "CI", expires_at: "2027-01-01T00:00:00Z", permissions: { tasks: ["read_all"] } },
   );
   assert.deepEqual(tokenSummary({ id: 2, title: "x" }), { id: 2, title: "x", expires_at: null, permissions: {} });
+});
+
+test("requireEvents requires a non-empty array of event strings", () => {
+  assert.deepEqual(requireEvents(["task.created", "task.updated"]), ["task.created", "task.updated"]);
+  for (const bad of [[], ["ok", 5], "task.created", {}, null, undefined]) {
+    assert.throws(() => requireEvents(bad), /events must be/, `reject ${JSON.stringify(bad)}`);
+  }
+});
+
+test("webhookSummary curates id/target_url/events, never the secret", () => {
+  assert.deepEqual(
+    webhookSummary({
+      id: 3,
+      target_url: "https://example.com/hook",
+      events: ["task.created"],
+      secret: "s3cr3t",
+      basic_auth_password: "p",
+    }),
+    { id: 3, target_url: "https://example.com/hook", events: ["task.created"] },
+  );
+  assert.deepEqual(webhookSummary({ id: 4, target_url: "https://x" }), {
+    id: 4,
+    target_url: "https://x",
+    events: [],
+  });
 });
 
 test("requireEntity accepts project/task, rejects others", () => {
