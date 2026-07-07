@@ -130,7 +130,7 @@ Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
 
 | Env var | Example |
 | --- | --- |
-| `VIKUNJA_URL` | `http://your-vikunja-host:3456/api/v1` (note the `/api/v1`) |
+| `VIKUNJA_URL` | `https://app.vikunja.cloud/api/v1` (note the `/api/v1`) |
 | `VIKUNJA_API_TOKEN` | `tk_...` (a Vikunja API token, scoped to Projects + Tasks) |
 | `VIKUNJA_MCP_ALLOW_WRITE` | `1` to also expose **write** (update) tools — off by default |
 | `VIKUNJA_MCP_ALLOW_DELETE` | `1` to also expose **delete** (destructive) tools — off by default |
@@ -145,7 +145,7 @@ Published to npm as [`@eargollo/vikunja-mcp`](https://www.npmjs.com/package/@ear
 (with build provenance). Run it straight from the registry:
 
 ```bash
-VIKUNJA_URL=http://your-vikunja-host:3456/api/v1 \
+VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
 VIKUNJA_API_TOKEN=tk_... \
   npx @eargollo/vikunja-mcp
 ```
@@ -156,23 +156,24 @@ Or clone and run from source (no build step):
 git clone https://github.com/eargollo/vikunja-mcp
 cd vikunja-mcp
 npm install          # installs only @modelcontextprotocol/sdk
-VIKUNJA_URL=http://your-vikunja-host:3456/api/v1 \
+VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
 VIKUNJA_API_TOKEN=tk_... \
   node index.js
 ```
 
 ## Register in Cursor / Claude Desktop
 
-Add to `.mcp.json` in your project (or global MCP config):
+Add to `.mcp.json` in your project (or global MCP config). Running from the
+registry with `npx` needs no clone and no local `node_modules`:
 
 ```json
 {
   "mcpServers": {
     "vikunja": {
-      "command": "node",
-      "args": ["/path/to/vikunja-mcp/index.js"],
+      "command": "npx",
+      "args": ["-y", "@eargollo/vikunja-mcp@latest"],
       "env": {
-        "VIKUNJA_URL": "http://your-vikunja-host:3456/api/v1",
+        "VIKUNJA_URL": "https://app.vikunja.cloud/api/v1",
         "VIKUNJA_API_TOKEN": "tk_..."
       }
     }
@@ -180,18 +181,38 @@ Add to `.mcp.json` in your project (or global MCP config):
 }
 ```
 
+Pin a version with `@eargollo/vikunja-mcp@<version>` if you'd rather not float on
+the latest. To run from a clone instead, use `"command": "node"` with
+`"args": ["/path/to/vikunja-mcp/index.js"]` — but `npm install` must have been
+run in that directory so `node_modules` sits next to `index.js`.
+
 ## Register in an MCP gateway (OpenClaw, etc.)
 
-For a gateway that launches MCP servers as local processes, clone this repo into
-the gateway's persisted storage, `npm install`, and register the server pointing
-at `index.js` with your Vikunja env — no npm/npx at runtime. The exact command
-depends on your gateway; the shape is:
+For a gateway that launches MCP servers as local processes, run the published
+package with `npx` — the gateway fetches it from the registry each time it
+starts the server, so there's no repo to clone and no `node_modules` to keep in
+sync next to `index.js`. The exact command depends on your gateway; the shape is:
+
+```bash
+<gateway-cli> mcp add vikunja \
+  --command npx \
+  --arg -y --arg @eargollo/vikunja-mcp@latest \
+  --env VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
+  --env VIKUNJA_API_TOKEN=tk_...
+```
+
+`@latest` tracks the newest release (pulled on server restart); pin an exact
+version with `@eargollo/vikunja-mcp@<version>`. Requires npm/network access.
+
+If the gateway is air-gapped, clone the repo into its persisted storage, run
+`npm install` there, and point at the file instead — but `node_modules` **must**
+live next to `index.js`, or the process exits on startup:
 
 ```bash
 <gateway-cli> mcp add vikunja \
   --command node \
   --arg /path/to/vikunja-mcp/index.js \
-  --env VIKUNJA_URL=http://your-vikunja-host:3456/api/v1 \
+  --env VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
   --env VIKUNJA_API_TOKEN=tk_...
 ```
 
