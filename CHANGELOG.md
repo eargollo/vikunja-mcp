@@ -22,6 +22,23 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
   tiers exist when opted in; coverage goal softened to “most common operations”;
   Labels and Teams marked partial where applicable.
 
+### Fixed / hardened (pre-1.0)
+
+- `api()`: a timeout that fires *during the response-body read* is now wrapped as
+  a clean "request timed out" error instead of leaking a raw `AbortError`.
+- `api()`: CalDAV-token creation (`PUT /user/settings/token/caldav`) is now
+  treated as a secret-bearing path, so its error bodies are omitted from logs
+  (matching API tokens and shares).
+- `api()`: response-body cap raised 1 MiB → 25 MiB so large-but-legitimate
+  responses (e.g. the unpaginated `GET /projects` behind `list_saved_filters`)
+  no longer false-positive, while still bounding memory.
+- Delete tools now advertise `idempotentHint: true` (re-deleting is safe to
+  retry); `priority` schema fields are `integer` (matching runtime validation).
+- `bulk_update_tasks`: the "no fields to update" guard no longer depends on a
+  positional body assumption.
+- More unit coverage: body-read timeout, size-cap surfacing, CalDAV sensitive
+  path, `requireNodeMinVersion`, and clean titles for every shipped tool.
+
 ### Not in this release (deferred)
 
 - `outputSchema` / `structuredContent` for tool results (JSON-as-text is enough

@@ -445,7 +445,9 @@ export function tierAnnotations(tier, toolName) {
   }
   if (tier === "delete") {
     const reversible = REVERSIBLE_DELETE_TOOLS.has(toolName);
-    return { readOnlyHint: false, destructiveHint: !reversible };
+    // Idempotent: re-deleting has no further effect on the environment, so a
+    // client can safely retry after a network blip.
+    return { readOnlyHint: false, destructiveHint: !reversible, idempotentHint: true };
   }
   return { readOnlyHint: false, destructiveHint: false };
 }

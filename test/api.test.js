@@ -31,10 +31,12 @@ test("classifyFetchError maps common network codes", () => {
   assert.equal(classifyFetchError(new Error("boom")), "network error");
 });
 
-test("isSensitiveErrorPath flags token and share endpoints", () => {
+test("isSensitiveErrorPath flags token, share, and CalDAV-token endpoints", () => {
   assert.ok(isSensitiveErrorPath("PUT", "/tokens"));
   assert.ok(isSensitiveErrorPath("PUT", "/projects/42/shares"));
+  assert.ok(isSensitiveErrorPath("PUT", "/user/settings/token/caldav"));
   assert.ok(!isSensitiveErrorPath("GET", "/tokens"));
+  assert.ok(!isSensitiveErrorPath("GET", "/user/settings/token/caldav"));
   assert.ok(!isSensitiveErrorPath("PUT", "/projects/42/tasks"));
 });
 
@@ -158,4 +160,34 @@ test("makeApi maps AbortSignal timeout to a clear error", async () => {
     },
   });
   await assert.rejects(() => api("GET", "/projects"), /timed out after 5ms/);
+});
+
+test("makeApi wraps a timeout that fires during the response-body read", async () => {
+  const api = makeApi({
+    base: BASE,
+    token: TOKEN,
+    timeoutMs: 5,
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      // the abort signal also aborts the body stream, so text() can reject
+      text: async () => {
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        throw err;
+      },
+    }),
+  });
+  await assert.rejects(() => api("GET", "/projects"), /timed out after 5ms/);
+});
+
+test("makeApi surfaces the size-cap error cleanly (not as a network error)", async () => {
+  const api = makeApi({
+    base: BASE,
+    token: TOKEN,
+    maxResponseBytes: 4,
+    fetch: async () => mockResponse({ body: "way too long" }),
+  });
+  await assert.rejects(() => api("GET", "/projects"), /byte limit/);
 });

@@ -608,14 +608,17 @@ test("tierAnnotations maps tiers to MCP hints", () => {
   assert.deepEqual(tierAnnotations("delete", "delete_project"), {
     readOnlyHint: false,
     destructiveHint: true,
+    idempotentHint: true,
   });
   assert.deepEqual(tierAnnotations("delete", "remove_label_from_task"), {
     readOnlyHint: false,
     destructiveHint: false,
+    idempotentHint: true,
   });
   assert.deepEqual(tierAnnotations("delete", "unassign_user"), {
     readOnlyHint: false,
     destructiveHint: false,
+    idempotentHint: true,
   });
   assert.deepEqual(tierAnnotations("write", "update_task"), {
     readOnlyHint: false,
@@ -632,6 +635,11 @@ test("SERVER_INSTRUCTIONS explains default gating", () => {
 test("toolDisplayTitle converts snake_case tool names", () => {
   assert.equal(toolDisplayTitle("list_projects"), "List Projects");
   assert.equal(toolDisplayTitle("delete_caldav_token"), "Delete Caldav Token");
+});
+
+test("requireNodeMinVersion accepts the current runtime and rejects an impossible floor", () => {
+  assert.doesNotThrow(() => requireNodeMinVersion(20));
+  assert.throws(() => requireNodeMinVersion(999), /requires Node\.js >= 999/);
 });
 
 test("caldavBaseFromApiUrl derives the /dav origin from the API base", () => {
