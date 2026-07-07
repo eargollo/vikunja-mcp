@@ -87,6 +87,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "list_all_tasks",
     "list_buckets",
     "list_labels",
+    "list_notifications",
     "list_projects",
     "list_saved_filters",
     "list_task_assignees",
@@ -98,6 +99,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "search_users",
     "share_project_with_team",
     "share_project_with_user",
+    "subscribe",
     "upload_task_attachment",
   ]);
   for (const gated of [
@@ -114,6 +116,8 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "move_task_to_bucket",
     "update_saved_filter",
     "delete_saved_filter",
+    "mark_notification_read",
+    "unsubscribe",
   ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
@@ -566,6 +570,29 @@ test("share_project_with_team and create_link_share succeed", { skip }, async ()
   const link = parse(await client.callTool({ name: "create_link_share", arguments: { project_id: project.id, permission: 0 } }));
   assert.equal(link.project_id, project.id);
   assert.ok(typeof link.hash === "string" && link.hash.length > 0, "returns a share hash");
+});
+
+test("list_notifications returns a (possibly empty) list without error", { skip }, async () => {
+  const res = parse(await client.callTool({ name: "list_notifications", arguments: {} }));
+  assert.ok(Array.isArray(res.items), "items should be an array");
+});
+
+test("subscribe then unsubscribe round-trips a task subscription", { skip }, async () => {
+  const wc = await getWriteClient(); // unsubscribe is delete-tier
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const task = parse(
+    await client.callTool({ name: "create_task", arguments: { project_id: projects.items[0].id, title: `e2e sub ${process.hrtime.bigint()}` } }),
+  );
+  const sub = parse(await client.callTool({ name: "subscribe", arguments: { entity: "task", entity_id: task.id } }));
+  assert.deepEqual(sub, { entity: "task", entity_id: task.id, subscribed: true });
+  const unsub = parse(await wc.callTool({ name: "unsubscribe", arguments: { entity: "task", entity_id: task.id } }));
+  assert.deepEqual(unsub, { entity: "task", entity_id: task.id, unsubscribed: true });
+});
+
+test("unsubscribe is not callable without the delete flag", { skip }, async () => {
+  const result = await client.callTool({ name: "unsubscribe", arguments: { entity: "task", entity_id: 1 } });
+  assert.ok(result.isError, "delete tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
 });
 
 test("saved filter create/list/update/delete round-trip", { skip }, async () => {

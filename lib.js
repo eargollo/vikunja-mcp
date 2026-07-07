@@ -112,6 +112,22 @@ export function savedFilterDetail(f) {
   };
 }
 
+// Entities a user can subscribe to for notifications.
+export const SUBSCRIBABLE_ENTITIES = ["project", "task"];
+
+export function requireEntity(value) {
+  if (typeof value !== "string" || !SUBSCRIBABLE_ENTITIES.includes(value)) {
+    throw new Error(`entity must be one of: ${SUBSCRIBABLE_ENTITIES.join(", ")}`);
+  }
+  return value;
+}
+
+export function notificationSummary(n) {
+  const readAt = n.read_at;
+  const read = typeof readAt === "string" && readAt !== "" && !readAt.startsWith("0001-01-01");
+  return { id: n.id, name: n.name ?? "", read, created: n.created ?? null };
+}
+
 // Vikunja sharing permission level: 0 = read, 1 = read+write, 2 = admin.
 export function optionalPermission(value) {
   if (value === undefined) return undefined;

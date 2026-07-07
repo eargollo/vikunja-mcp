@@ -37,6 +37,9 @@ import {
   optionalBoolean,
   optionalParentProjectId,
   optionalPermission,
+  SUBSCRIBABLE_ENTITIES,
+  requireEntity,
+  notificationSummary,
   buildQuery,
   paginatedResult,
   taskDetail,
@@ -1082,6 +1085,84 @@ export function buildTools({ api }) {
         const id = requirePositiveIntId(filter_id, "filter_id");
         await api("DELETE", `/filters/${id}`);
         return { id, deleted: true };
+      },
+    },
+    {
+      name: "list_notifications",
+      tier: "read",
+      description:
+        "List the current user's notifications (id, name, read, created). Paginated; request successive pages while page < total_pages.",
+      inputSchema: { type: "object", properties: paginationSchema, additionalProperties: false },
+      run: async ({ page, per_page } = {}) => {
+        const resolvedPage = optionalPage(page);
+        const resolvedPerPage = optionalPerPage(per_page);
+        const query = buildQuery({ page: resolvedPage, per_page: resolvedPerPage });
+        const { data, headers } = await api("GET", `/notifications${query}`);
+        const items = (data ?? []).map(notificationSummary);
+        return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
+      },
+    },
+    {
+      name: "mark_notification_read",
+      tier: "write",
+      description: "Mark a notification read, or unread with read=false (defaults to read=true).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          notification_id: { type: "number", description: "Vikunja notification id" },
+          read: { type: "boolean", description: "true to mark read (default), false to mark unread" },
+        },
+        required: ["notification_id"],
+        additionalProperties: false,
+      },
+      run: async ({ notification_id, read }) => {
+        const id = requirePositiveIntId(notification_id, "notification_id");
+        const isRead = read === undefined ? true : optionalBoolean(read, "read");
+        // Body shape inferred from Vikunja's DatabaseNotification.read json tag;
+        // swagger documents no body and the throwaway test instance generates no
+        // notifications, so this path is unit-tested only, not exercised live.
+        await api("POST", `/notifications/${id}`, { read: isRead });
+        return { notification_id: id, read: isRead, marked: true };
+      },
+    },
+    {
+      name: "subscribe",
+      tier: "additive",
+      description: "Subscribe the current user to a project or task to get its notifications.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          entity: { type: "string", description: "What to subscribe to", enum: SUBSCRIBABLE_ENTITIES },
+          entity_id: { type: "number", description: "Id of the project or task" },
+        },
+        required: ["entity", "entity_id"],
+        additionalProperties: false,
+      },
+      run: async ({ entity, entity_id }) => {
+        const ent = requireEntity(entity);
+        const eid = requirePositiveIntId(entity_id, "entity_id");
+        await api("PUT", `/subscriptions/${ent}/${eid}`);
+        return { entity: ent, entity_id: eid, subscribed: true };
+      },
+    },
+    {
+      name: "unsubscribe",
+      tier: "delete",
+      description: "Unsubscribe the current user from a project or task.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          entity: { type: "string", description: "What to unsubscribe from", enum: SUBSCRIBABLE_ENTITIES },
+          entity_id: { type: "number", description: "Id of the project or task" },
+        },
+        required: ["entity", "entity_id"],
+        additionalProperties: false,
+      },
+      run: async ({ entity, entity_id }) => {
+        const ent = requireEntity(entity);
+        const eid = requirePositiveIntId(entity_id, "entity_id");
+        await api("DELETE", `/subscriptions/${ent}/${eid}`);
+        return { entity: ent, entity_id: eid, unsubscribed: true };
       },
     },
   ];

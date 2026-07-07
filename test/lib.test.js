@@ -43,6 +43,9 @@ import {
   bucketSummary,
   optionalPermission,
   savedFilterDetail,
+  SUBSCRIBABLE_ENTITIES,
+  requireEntity,
+  notificationSummary,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -405,6 +408,24 @@ test("decodeBase64 decodes valid base64 to bytes, rejects empty/invalid", () => 
   for (const bad of ["", "   ", "!!!", "aGVsbG8=extra", "not base64!!", 5, null, undefined]) {
     assert.throws(() => decodeBase64(bad), /base64/, `reject ${String(bad)}`);
   }
+});
+
+test("requireEntity accepts project/task, rejects others", () => {
+  assert.equal(requireEntity("project"), "project");
+  assert.equal(requireEntity("task"), "task");
+  assert.ok(SUBSCRIBABLE_ENTITIES.includes("task"));
+  for (const bad of ["label", "TASK", "", 5, null, undefined]) {
+    assert.throws(() => requireEntity(bad), /entity must be one of/, `reject ${String(bad)}`);
+  }
+});
+
+test("notificationSummary marks read from a real read_at, ignoring zero-dates/null", () => {
+  assert.deepEqual(
+    notificationSummary({ id: 3, name: "task.assigned", read_at: "2026-01-01T00:00:00Z", created: "2026-01-01T00:00:00Z", notification: {} }),
+    { id: 3, name: "task.assigned", read: true, created: "2026-01-01T00:00:00Z" },
+  );
+  assert.equal(notificationSummary({ id: 4, name: "x", read_at: "0001-01-01T00:00:00Z" }).read, false);
+  assert.equal(notificationSummary({ id: 5, name: "x" }).read, false);
 });
 
 test("optionalPermission accepts 0/1/2, rejects out-of-range and non-integers", () => {
