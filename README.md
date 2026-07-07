@@ -35,6 +35,7 @@ This one is the opposite:
 | `list_task_comments` | read | `GET /tasks/{id}/comments` |
 | `list_task_relations` | read | `GET /tasks/{id}` |
 | `list_task_attachments` | read | `GET /tasks/{id}/attachments` |
+| `list_buckets` | read | `GET /projects/{id}/views/{view}/buckets` |
 | `create_project` | additive | `PUT /projects` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 | `add_label_to_task` | additive | `PUT /tasks/{id}/labels` |
@@ -42,7 +43,9 @@ This one is the opposite:
 | `add_task_comment` | additive | `PUT /tasks/{id}/comments` |
 | `create_task_relation` | additive | `PUT /tasks/{id}/relations` |
 | `upload_task_attachment` | additive | `PUT /tasks/{id}/attachments` |
+| `create_bucket` | additive | `PUT /projects/{id}/views/{view}/buckets` |
 | `update_task` | write | `POST /tasks/{id}` |
+| `move_task_to_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucket_id}/tasks` |
 | `set_task_done` | write | `POST /tasks/{id}` |
 | `update_project` | write | `POST /projects/{id}` |
 | `archive_project` | write | `POST /projects/{id}` |
@@ -114,7 +117,7 @@ data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 | Task comments (list/add/delete) | ✅ shipped |
 | Task relations (list/create/delete) | ✅ shipped |
 | Attachments (list/upload/delete, base64 upload) | ✅ shipped |
-| Kanban buckets | 🔜 [#13](https://github.com/eargollo/vikunja-mcp/issues/13) |
+| Kanban buckets (list/create, move task) | ✅ shipped |
 | Teams & sharing | 🔜 [#14](https://github.com/eargollo/vikunja-mcp/issues/14) |
 | Saved filters | 🔜 [#15](https://github.com/eargollo/vikunja-mcp/issues/15) |
 | Subscriptions & notifications | 🔜 [#16](https://github.com/eargollo/vikunja-mcp/issues/16) |

@@ -74,6 +74,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "add_label_to_task",
     "add_task_comment",
     "assign_user",
+    "create_bucket",
     "create_label",
     "create_project",
     "create_task",
@@ -81,6 +82,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "get_project",
     "get_task",
     "list_all_tasks",
+    "list_buckets",
     "list_labels",
     "list_projects",
     "list_task_assignees",
@@ -102,6 +104,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "delete_task_comment",
     "delete_task_relation",
     "delete_task_attachment",
+    "move_task_to_bucket",
   ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
@@ -494,6 +497,39 @@ test("upload_task_attachment, list_task_attachments, delete_task_attachment roun
 test("delete_task_attachment is not callable without the delete flag", { skip }, async () => {
   const result = await client.callTool({ name: "delete_task_attachment", arguments: { task_id: 1, attachment_id: 1 } });
   assert.ok(result.isError, "delete tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
+});
+
+test("list_buckets, create_bucket, move_task_to_bucket round-trip", { skip }, async () => {
+  const wc = await getWriteClient(); // move_task_to_bucket is write-tier
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const pid = projects.items[0].id;
+
+  const before = parse(await client.callTool({ name: "list_buckets", arguments: { project_id: pid } }));
+  assert.ok(Number.isInteger(before.view_id), "resolved a kanban view");
+  assert.ok(before.buckets.length >= 1, "kanban view seeds at least one bucket");
+
+  const bucket = parse(
+    await client.callTool({ name: "create_bucket", arguments: { project_id: pid, title: `e2e col ${process.hrtime.bigint()}` } }),
+  );
+  assert.ok(Number.isInteger(bucket.id));
+  assert.equal(bucket.view_id, before.view_id);
+
+  const task = parse(
+    await client.callTool({ name: "create_task", arguments: { project_id: pid, title: `e2e kanban ${process.hrtime.bigint()}` } }),
+  );
+  const moved = parse(
+    await wc.callTool({ name: "move_task_to_bucket", arguments: { project_id: pid, bucket_id: bucket.id, task_id: task.id } }),
+  );
+  assert.deepEqual(moved, { project_id: pid, view_id: before.view_id, bucket_id: bucket.id, task_id: task.id, moved: true });
+});
+
+test("move_task_to_bucket is not callable without the write flag", { skip }, async () => {
+  const result = await client.callTool({
+    name: "move_task_to_bucket",
+    arguments: { project_id: 1, bucket_id: 1, task_id: 1 },
+  });
+  assert.ok(result.isError, "write tool must be gated off by default");
   assert.match(result.content[0].text, /Unknown tool/);
 });
 

@@ -100,6 +100,10 @@ export function attachmentSummary(a) {
   };
 }
 
+export function bucketSummary(b) {
+  return { id: b.id, title: b.title, limit: b.limit ?? 0, count: b.count ?? 0 };
+}
+
 export function commentSummary(c) {
   return {
     id: c.id,

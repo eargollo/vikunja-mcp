@@ -40,6 +40,7 @@ import {
   requireFilename,
   decodeBase64,
   attachmentSummary,
+  bucketSummary,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -402,6 +403,16 @@ test("decodeBase64 decodes valid base64 to bytes, rejects empty/invalid", () => 
   for (const bad of ["", "   ", "!!!", "aGVsbG8=extra", "not base64!!", 5, null, undefined]) {
     assert.throws(() => decodeBase64(bad), /base64/, `reject ${String(bad)}`);
   }
+});
+
+test("bucketSummary curates id/title/limit/count with numeric defaults", () => {
+  assert.deepEqual(bucketSummary({ id: 2, title: "Doing", limit: 5, count: 3, tasks: [], secret: "x" }), {
+    id: 2,
+    title: "Doing",
+    limit: 5,
+    count: 3,
+  });
+  assert.deepEqual(bucketSummary({ id: 1, title: "To-Do" }), { id: 1, title: "To-Do", limit: 0, count: 0 });
 });
 
 test("attachmentSummary curates id/name/size/mime/created from the nested file", () => {
