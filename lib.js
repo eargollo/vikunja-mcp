@@ -46,11 +46,16 @@ export function userSummary(u) {
   return { id: u.id, username: u.username, name: u.name ?? "" };
 }
 
-export function requireQuery(value) {
+// Trim and require a non-empty string, naming the field in the error.
+export function requireNonEmptyString(value, name) {
   if (typeof value !== "string" || value.trim() === "") {
-    throw new Error("query must not be empty");
+    throw new Error(`${name} must not be empty`);
   }
   return value.trim();
+}
+
+export function requireQuery(value) {
+  return requireNonEmptyString(value, "query");
 }
 
 export function requireCommentId(value) {
@@ -58,17 +63,11 @@ export function requireCommentId(value) {
 }
 
 export function requireComment(value) {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error("comment must not be empty");
-  }
-  return value.trim();
+  return requireNonEmptyString(value, "comment");
 }
 
 export function requireFilename(value) {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error("filename must not be empty");
-  }
-  return value.trim();
+  return requireNonEmptyString(value, "filename");
 }
 
 // Decode a base64 string to a Buffer for multipart upload. Rejects empty and
@@ -102,6 +101,15 @@ export function attachmentSummary(a) {
 
 export function bucketSummary(b) {
   return { id: b.id, title: b.title, limit: b.limit ?? 0, count: b.count ?? 0 };
+}
+
+export function savedFilterDetail(f) {
+  return {
+    id: f.id,
+    title: f.title,
+    description: f.description ?? "",
+    filter: f.filters?.filter ?? "",
+  };
 }
 
 // Vikunja sharing permission level: 0 = read, 1 = read+write, 2 = admin.

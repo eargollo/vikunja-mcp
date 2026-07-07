@@ -78,6 +78,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "create_label",
     "create_link_share",
     "create_project",
+    "create_saved_filter",
     "create_task",
     "create_task_relation",
     "create_team",
@@ -87,6 +88,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "list_buckets",
     "list_labels",
     "list_projects",
+    "list_saved_filters",
     "list_task_assignees",
     "list_task_attachments",
     "list_task_comments",
@@ -110,6 +112,8 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "delete_task_relation",
     "delete_task_attachment",
     "move_task_to_bucket",
+    "update_saved_filter",
+    "delete_saved_filter",
   ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
@@ -562,6 +566,41 @@ test("share_project_with_team and create_link_share succeed", { skip }, async ()
   const link = parse(await client.callTool({ name: "create_link_share", arguments: { project_id: project.id, permission: 0 } }));
   assert.equal(link.project_id, project.id);
   assert.ok(typeof link.hash === "string" && link.hash.length > 0, "returns a share hash");
+});
+
+test("saved filter create/list/update/delete round-trip", { skip }, async () => {
+  const wc = await getWriteClient(); // update (write) + delete (delete) are gated
+  const title = `e2e filter ${process.hrtime.bigint()}`;
+  const created = parse(
+    await client.callTool({
+      name: "create_saved_filter",
+      arguments: { title, filter: "done = false", description: "made in e2e" },
+    }),
+  );
+  assert.ok(Number.isInteger(created.id));
+
+  const list = parse(await client.callTool({ name: "list_saved_filters", arguments: {} }));
+  assert.ok(list.filters.some((f) => f.id === created.id && f.title === title), "filter appears in list");
+
+  const updated = parse(
+    await wc.callTool({
+      name: "update_saved_filter",
+      arguments: { filter_id: created.id, filter: "priority >= 4" },
+    }),
+  );
+  assert.equal(updated.filter, "priority >= 4");
+  assert.equal(updated.description, "made in e2e", "description preserved by fetch-merge");
+
+  const del = parse(await wc.callTool({ name: "delete_saved_filter", arguments: { filter_id: created.id } }));
+  assert.deepEqual(del, { id: created.id, deleted: true });
+  const after = parse(await client.callTool({ name: "list_saved_filters", arguments: {} }));
+  assert.ok(!after.filters.some((f) => f.id === created.id), "filter removed");
+});
+
+test("update_saved_filter is not callable without the write flag", { skip }, async () => {
+  const result = await client.callTool({ name: "update_saved_filter", arguments: { filter_id: 1, title: "x" } });
+  assert.ok(result.isError, "write tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
 });
 
 test("share_project_with_user surfaces a clean error for a nonexistent user", { skip }, async () => {

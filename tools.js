@@ -14,6 +14,7 @@ import {
   requireCommentId,
   requireComment,
   requireFilename,
+  requireNonEmptyString,
   requireTitle,
   requireQuery,
   optionalHexColor,
@@ -40,6 +41,7 @@ import {
   paginatedResult,
   taskDetail,
   projectDetail,
+  savedFilterDetail,
 } from "./lib.js";
 
 const paginationSchema = {
@@ -100,6 +102,27 @@ export function buildTools({ api }) {
       throw new Error("Vikunja returned an empty project response");
     }
     return projectDetail(project);
+  };
+
+  // Saved-filter update, like project update, requires a full body (POST /filters/{id}
+  // 412s on a partial). Fetch current, override only what changed, preserving
+  // the rest of the nested filters object (s/sort_by/order_by/include_nulls).
+  const updateSavedFilterMerged = async (id, changes) => {
+    const { data: current } = await api("GET", `/filters/${id}`);
+    if (!current || current.id == null) {
+      throw new Error("Vikunja returned no saved filter");
+    }
+    const body = {
+      title: changes.title ?? current.title,
+      description: changes.description ?? current.description ?? "",
+      filters: { ...(current.filters ?? {}), filter: changes.filter ?? current.filters?.filter ?? "" },
+      is_favorite: current.is_favorite ?? false,
+    };
+    const { data: updated } = await api("POST", `/filters/${id}`, body);
+    if (!updated || updated.id == null) {
+      throw new Error("Vikunja returned an empty saved filter response");
+    }
+    return savedFilterDetail(updated);
   };
 
   // Buckets live under a project's kanban view. Resolve it (the first kanban
@@ -968,6 +991,97 @@ export function buildTools({ api }) {
           throw new Error("Vikunja returned an empty share response");
         }
         return { project_id: pid, hash: share.hash, permission: share.permission ?? perm };
+      },
+    },
+    {
+      name: "list_saved_filters",
+      tier: "read",
+      description:
+        "List saved filters (id, title). Vikunja has no filters list endpoint — these are read from the projects list, where saved filters appear as negative-id pseudo-projects, so a very large number of projects could page some out.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      run: async () => {
+        const { data } = await api("GET", "/projects");
+        // filter_id = -project_id - 1 is an undocumented v2.3.0 internal for how
+        // saved filters are encoded as pseudo-projects — re-verify on upgrades.
+        const filters = (data ?? [])
+          .filter((p) => p.id < 0)
+          .map((p) => ({ id: -p.id - 1, title: p.title }));
+        return { filters };
+      },
+    },
+    {
+      name: "create_saved_filter",
+      tier: "additive",
+      description:
+        "Create a saved filter from a Vikunja filter query. Requires a title; optional description.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Filter title" },
+          filter: { type: "string", description: 'Vikunja filter query, e.g. "done = false && priority >= 4"' },
+          description: { type: "string", description: "Description" },
+        },
+        required: ["title", "filter"],
+        additionalProperties: false,
+      },
+      run: async ({ title, filter, description }) => {
+        const body = {
+          title: requireTitle(title),
+          filters: { filter: requireNonEmptyString(filter, "filter") },
+        };
+        const desc = optionalDescription(description);
+        if (desc !== undefined) body.description = desc;
+        const { data: saved } = await api("PUT", "/filters", body);
+        if (!saved || saved.id == null) {
+          throw new Error("Vikunja returned an empty saved filter response");
+        }
+        return { id: saved.id, title: saved.title };
+      },
+    },
+    {
+      name: "update_saved_filter",
+      tier: "write",
+      description: "Update a saved filter's title, description, or filter query. Only the fields you pass change.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          filter_id: { type: "number", description: "Saved filter id" },
+          title: { type: "string", description: "New title" },
+          filter: { type: "string", description: "New Vikunja filter query" },
+          description: { type: "string", description: "New description" },
+        },
+        required: ["filter_id"],
+        additionalProperties: false,
+      },
+      run: async ({ filter_id, title, filter, description }) => {
+        const id = requirePositiveIntId(filter_id, "filter_id");
+        const changes = {};
+        if (title !== undefined) changes.title = requireTitle(title);
+        // A saved filter's query can't be emptied — if `filter` is passed it
+        // must be a non-empty query (a clear error beats silently no-op'ing).
+        if (filter !== undefined) changes.filter = requireNonEmptyString(filter, "filter");
+        const desc = optionalDescription(description);
+        if (desc !== undefined) changes.description = desc;
+        if (Object.keys(changes).length === 0) {
+          throw new Error("update_saved_filter: no fields to update");
+        }
+        return updateSavedFilterMerged(id, changes);
+      },
+    },
+    {
+      name: "delete_saved_filter",
+      tier: "delete",
+      description: "Delete a saved filter by id.",
+      inputSchema: {
+        type: "object",
+        properties: { filter_id: { type: "number", description: "Saved filter id" } },
+        required: ["filter_id"],
+        additionalProperties: false,
+      },
+      run: async ({ filter_id }) => {
+        const id = requirePositiveIntId(filter_id, "filter_id");
+        await api("DELETE", `/filters/${id}`);
+        return { id, deleted: true };
       },
     },
   ];

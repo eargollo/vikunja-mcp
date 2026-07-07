@@ -63,7 +63,122 @@ test("each tool has the expected tier", () => {
     share_project_with_user: "additive",
     share_project_with_team: "additive",
     create_link_share: "additive",
+    list_saved_filters: "read",
+    create_saved_filter: "additive",
+    update_saved_filter: "write",
+    delete_saved_filter: "delete",
   });
+});
+
+test("list_saved_filters extracts negative-id projects and maps to filter ids", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/projects");
+    return {
+      data: [
+        { id: 5, title: "Real project" },
+        { id: -3, title: "F1" },
+        { id: -4, title: "F2" },
+      ],
+      headers: headers(),
+    };
+  };
+  const res = await byName(buildTools({ api }), "list_saved_filters").run({});
+  // filter_id = -project_id - 1  →  -3 => 2, -4 => 3
+  assert.deepEqual(res, { filters: [{ id: 2, title: "F1" }, { id: 3, title: "F2" }] });
+});
+
+test("create_saved_filter PUTs title + filter query (+ optional description)", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/filters");
+    assert.deepEqual(body, { title: "Urgent", description: "d", filters: { filter: "priority >= 4" } });
+    return { data: { id: 7, title: "Urgent" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "create_saved_filter").run({
+    title: " Urgent ",
+    description: "d",
+    filter: "priority >= 4",
+  });
+  assert.deepEqual(res, { id: 7, title: "Urgent" });
+});
+
+test("update_saved_filter fetch-merges, preserving the rest of the filters object", async () => {
+  const current = {
+    id: 5,
+    title: "Old",
+    description: "keep",
+    filters: { s: "", sort_by: null, order_by: null, filter: "done = false", filter_include_nulls: true },
+    is_favorite: true,
+  };
+  let posted;
+  const api = async (method, path, body) => {
+    if (method === "GET") {
+      assert.equal(path, "/filters/5");
+      return { data: current, headers: headers() };
+    }
+    assert.equal(method, "POST");
+    assert.equal(path, "/filters/5");
+    posted = body;
+    return { data: { ...current, title: body.title, filters: body.filters }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "update_saved_filter").run({ filter_id: 5, filter: "priority >= 3" });
+  assert.deepEqual(posted, {
+    title: "Old",
+    description: "keep",
+    filters: { s: "", sort_by: null, order_by: null, filter: "priority >= 3", filter_include_nulls: true },
+    is_favorite: true,
+  });
+  assert.equal(res.filter, "priority >= 3");
+});
+
+test("create_saved_filter rejects an empty filter query before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "create_saved_filter").run({ title: "x", filter: "   " }),
+    /filter must not be empty/,
+  );
+  assert.equal(called, false);
+});
+
+test("update_saved_filter rejects an empty filter with a clear error (not a no-op)", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "update_saved_filter").run({ filter_id: 5, filter: "" }),
+    /filter must not be empty/,
+  );
+  assert.equal(called, false);
+});
+
+test("update_saved_filter errors (no api call) when nothing is provided", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "update_saved_filter").run({ filter_id: 5 }),
+    /no fields to update/,
+  );
+  assert.equal(called, false);
+});
+
+test("delete_saved_filter DELETEs /filters/{id} and confirms", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/filters/5");
+    return { data: { message: "ok" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "delete_saved_filter").run({ filter_id: 5 });
+  assert.deepEqual(res, { id: 5, deleted: true });
 });
 
 test("list_teams maps id/name into the paginated envelope", async () => {
