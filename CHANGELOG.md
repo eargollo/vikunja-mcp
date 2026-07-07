@@ -5,6 +5,8 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Unreleased
 
+## 1.1.0 - 2026-07-07
+
 ### Added
 
 - Tool results now include MCP `structuredContent` (the raw result object)
