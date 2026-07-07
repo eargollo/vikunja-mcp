@@ -16,6 +16,10 @@ import {
   okResult,
   flagEnabled,
   tierAllowed,
+  tierAnnotations,
+  SERVER_INSTRUCTIONS,
+  requireNodeMinVersion,
+  MAX_UPLOAD_BYTES,
   requireTaskId,
   optionalFilter,
   optionalSortBy,
@@ -592,4 +596,36 @@ test("tierAllowed filters a synthetic tool list by env flags", () => {
   assert.deepEqual(names({ allowWrite: true, allowDelete: false }), ["r", "a", "w"]);
   assert.deepEqual(names({ allowWrite: false, allowDelete: true }), ["r", "a", "d"]);
   assert.deepEqual(names({ allowWrite: true, allowDelete: true }), ["r", "a", "w", "d"]);
+});
+
+test("tierAnnotations maps tiers to MCP hints", () => {
+  assert.deepEqual(tierAnnotations("read", "list_tasks"), { readOnlyHint: true, destructiveHint: false });
+  assert.deepEqual(tierAnnotations("delete", "delete_project"), {
+    readOnlyHint: false,
+    destructiveHint: true,
+  });
+  assert.deepEqual(tierAnnotations("delete", "remove_label_from_task"), {
+    readOnlyHint: false,
+    destructiveHint: false,
+  });
+  assert.deepEqual(tierAnnotations("delete", "unassign_user"), {
+    readOnlyHint: false,
+    destructiveHint: false,
+  });
+  assert.deepEqual(tierAnnotations("write", "update_task"), {
+    readOnlyHint: false,
+    destructiveHint: false,
+  });
+});
+
+test("SERVER_INSTRUCTIONS explains default gating", () => {
+  assert.match(SERVER_INSTRUCTIONS, /read and additive/);
+  assert.match(SERVER_INSTRUCTIONS, /VIKUNJA_MCP_ALLOW_WRITE/);
+  assert.match(SERVER_INSTRUCTIONS, /VIKUNJA_MCP_ALLOW_DELETE/);
+});
+
+test("decodeBase64 rejects payloads above MAX_UPLOAD_BYTES", () => {
+  const big = Buffer.alloc(MAX_UPLOAD_BYTES + 1, 1);
+  const encoded = big.toString("base64");
+  assert.throws(() => decodeBase64(encoded), /exceeds maximum size/);
 });

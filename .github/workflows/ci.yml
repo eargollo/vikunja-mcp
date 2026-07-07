@@ -16,6 +16,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: No console.log in server sources
+        run: |
+          if grep -n 'console\.log' index.js lib.js tools.js api.js; then
+            echo "console.log is not allowed in server sources (use console.error for stderr)"
+            exit 1
+          fi
       # Pure helpers only — no Docker, no network. The e2e file self-skips here
       # because VIKUNJA_URL / VIKUNJA_API_TOKEN aren't set. Coverage report is
       # printed to the job log.

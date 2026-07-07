@@ -108,6 +108,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "update_project",
     "archive_project",
     "delete_project",
+    "delete_task",
     "remove_label_from_task",
     "unassign_user",
     "delete_task_comment",
@@ -325,6 +326,28 @@ test("delete_project removes a project (delete tier)", { skip }, async () => {
 test("delete_project is not callable without the delete flag", { skip }, async () => {
   const result = await client.callTool({ name: "delete_project", arguments: { project_id: 1 } });
   assert.ok(result.isError, "delete tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
+});
+
+test("delete_task removes a task (delete tier)", { skip }, async () => {
+  const wc = await getWriteClient();
+  const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
+  const projectId = projects.items[0].id;
+  const created = parse(
+    await wc.callTool({
+      name: "create_task",
+      arguments: { project_id: projectId, title: `e2e task del ${process.hrtime.bigint()}` },
+    }),
+  );
+  const res = parse(await wc.callTool({ name: "delete_task", arguments: { task_id: created.id } }));
+  assert.deepEqual(res, { ok: true, task_id: created.id });
+  const after = await wc.callTool({ name: "get_task", arguments: { task_id: created.id } });
+  assert.ok(after.isError, "deleted task should no longer be fetchable");
+});
+
+test("delete_task is not callable without the delete flag", { skip }, async () => {
+  const result = await client.callTool({ name: "delete_task", arguments: { task_id: 1 } });
+  assert.ok(result.isError, "delete_task must be gated off by default");
   assert.match(result.content[0].text, /Unknown tool/);
 });
 

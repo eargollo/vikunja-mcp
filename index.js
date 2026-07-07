@@ -4,9 +4,9 @@
 // Trust posture (the whole point of this repo):
 //   - ONE dependency: the official @modelcontextprotocol/sdk. HTTP is Node's
 //     built-in fetch — no axios, no client libs, no transitive surface.
-//   - Every outbound request goes through the single api() function below, so
-//     there is exactly one place that can talk to the network, and it only ever
-//     talks to VIKUNJA_URL with your token.
+//   - Every outbound request goes through makeApi() in api.js, so there is
+//     exactly one place that can talk to the network, and it only ever talks to
+//     VIKUNJA_URL with your token.
 //   - READ + ADDITIVE tools by default (list + create). Write (update, access-
 //     granting, egress) and delete tools are opt-in via VIKUNJA_MCP_ALLOW_WRITE /
 //     _ALLOW_DELETE — a default install can't modify, share, exfiltrate, or
@@ -20,8 +20,23 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { requireAbsoluteUrl, flagEnabled, tierAllowed } from "./lib.js";
+import { makeApi } from "./api.js";
+import {
+  requireAbsoluteUrl,
+  flagEnabled,
+  tierAllowed,
+  tierAnnotations,
+  SERVER_INSTRUCTIONS,
+  requireNodeMinVersion,
+} from "./lib.js";
 import { buildTools } from "./tools.js";
+
+try {
+  requireNodeMinVersion(20);
+} catch (err) {
+  console.error(`vikunja-mcp: ${err.message}`);
+  process.exit(1);
+}
 
 let BASE;
 try {
@@ -37,50 +52,7 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-const REQUEST_TIMEOUT_MS = 30_000;
-
-// The only network egress in the whole server: fixed base URL, fixed token,
-// JSON in/out (plus multipart FormData for file uploads). Nothing else reaches
-// out. FormData bodies are passed through untouched so fetch sets the multipart
-// Content-Type + boundary itself; everything else is JSON.
-async function api(method, path, body) {
-  const isForm = body instanceof FormData;
-  let res;
-  try {
-    res = await fetch(`${BASE}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${TOKEN}`,
-        ...(isForm ? {} : { "Content-Type": "application/json" }),
-      },
-      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (err) {
-    if (err.name === "TimeoutError" || err.name === "AbortError") {
-      throw new Error(`Vikunja ${method} ${path} -> request timed out after ${REQUEST_TIMEOUT_MS}ms`);
-    }
-    throw err;
-  }
-  const text = await res.text();
-  if (!res.ok) {
-    const detail = text.slice(0, 400);
-    console.error(`vikunja-mcp: ${method} ${path} -> ${res.status}: ${detail}`);
-    if (res.status >= 500) {
-      throw new Error(`Vikunja ${method} ${path} -> ${res.status}: server error`);
-    }
-    throw new Error(`Vikunja ${method} ${path} -> ${res.status}: ${detail}`);
-  }
-  let data = null;
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(`Vikunja ${method} ${path} -> invalid JSON response`);
-    }
-  }
-  return { data, headers: res.headers };
-}
+const api = makeApi({ base: BASE, token: TOKEN });
 
 // Opt-in gating: read + additive tools are always exposed; write (update) and
 // delete (destructive) tools appear only when their env flag is set. A default
@@ -94,12 +66,17 @@ const gate = {
 const TOOLS = buildTools({ api }).filter((t) => tierAllowed(t.tier, gate));
 
 const server = new Server(
-  { name: "vikunja-mcp", version: pkg.version },
+  { name: "vikunja-mcp", version: pkg.version, instructions: SERVER_INSTRUCTIONS },
   { capabilities: { tools: {} } },
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+  tools: TOOLS.map(({ name, description, inputSchema, tier }) => ({
+    name,
+    description,
+    inputSchema,
+    annotations: tierAnnotations(tier, name),
+  })),
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
