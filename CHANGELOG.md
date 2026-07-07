@@ -5,6 +5,11 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Unreleased
 
+## 1.0.0 - 2026-07-07
+
+First stable release. The tool names, input schemas, and output shapes are now a
+contract covered by semver — breaking changes will bump the major version.
+
 ### Added
 
 - **API coverage (post-1.0):** `update_label`, `delete_label`, `update_bucket`,
