@@ -34,12 +34,14 @@ This one is the opposite:
 | `list_task_assignees` | read | `GET /tasks/{id}` |
 | `list_task_comments` | read | `GET /tasks/{id}/comments` |
 | `list_task_relations` | read | `GET /tasks/{id}` |
+| `list_task_attachments` | read | `GET /tasks/{id}/attachments` |
 | `create_project` | additive | `PUT /projects` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 | `add_label_to_task` | additive | `PUT /tasks/{id}/labels` |
 | `assign_user` | additive | `PUT /tasks/{id}/assignees` |
 | `add_task_comment` | additive | `PUT /tasks/{id}/comments` |
 | `create_task_relation` | additive | `PUT /tasks/{id}/relations` |
+| `upload_task_attachment` | additive | `PUT /tasks/{id}/attachments` |
 | `update_task` | write | `POST /tasks/{id}` |
 | `set_task_done` | write | `POST /tasks/{id}` |
 | `update_project` | write | `POST /projects/{id}` |
@@ -50,6 +52,7 @@ This one is the opposite:
 | `unassign_user` | delete | `DELETE /tasks/{id}/assignees/{userId}` |
 | `delete_task_comment` | delete | `DELETE /tasks/{id}/comments/{commentId}` |
 | `delete_task_relation` | delete | `DELETE /tasks/{id}/relations/{kind}/{otherId}` |
+| `delete_task_attachment` | delete | `DELETE /tasks/{id}/attachments/{attachmentId}` |
 
 `list_projects`, `list_tasks`, and `list_all_tasks` support optional `page` and
 `per_page`. Responses include `{ page, total_pages, count, items }`; paginate by
@@ -110,7 +113,7 @@ data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 | Assignees (`search_users`, list/assign/unassign) | ✅ shipped |
 | Task comments (list/add/delete) | ✅ shipped |
 | Task relations (list/create/delete) | ✅ shipped |
-| Attachments | 🔜 [#12](https://github.com/eargollo/vikunja-mcp/issues/12) |
+| Attachments (list/upload/delete, base64 upload) | ✅ shipped |
 | Kanban buckets | 🔜 [#13](https://github.com/eargollo/vikunja-mcp/issues/13) |
 | Teams & sharing | 🔜 [#14](https://github.com/eargollo/vikunja-mcp/issues/14) |
 | Saved filters | 🔜 [#15](https://github.com/eargollo/vikunja-mcp/issues/15) |

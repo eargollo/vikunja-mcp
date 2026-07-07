@@ -64,6 +64,42 @@ export function requireComment(value) {
   return value.trim();
 }
 
+export function requireFilename(value) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error("filename must not be empty");
+  }
+  return value.trim();
+}
+
+// Decode a base64 string to a Buffer for multipart upload. Rejects empty and
+// effectively-invalid input (base64 that decodes to nothing).
+export function decodeBase64(value, name = "content_base64") {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${name} must be a base64-encoded string`);
+  }
+  // Buffer.from(...,"base64") silently drops invalid chars, so validate the
+  // shape first — otherwise malformed input uploads corrupted bytes.
+  const normalized = value.replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
+    throw new Error(`${name} must be a base64-encoded string`);
+  }
+  const buf = Buffer.from(normalized, "base64");
+  if (buf.length === 0) {
+    throw new Error(`${name} must be a base64-encoded string`);
+  }
+  return buf;
+}
+
+export function attachmentSummary(a) {
+  return {
+    id: a.id,
+    name: a.file?.name ?? null,
+    size: a.file?.size ?? null,
+    mime: a.file?.mime ?? null,
+    created: a.created ?? null,
+  };
+}
+
 export function commentSummary(c) {
   return {
     id: c.id,

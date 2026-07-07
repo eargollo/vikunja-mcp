@@ -52,7 +52,87 @@ test("each tool has the expected tier", () => {
     list_task_relations: "read",
     create_task_relation: "additive",
     delete_task_relation: "delete",
+    list_task_attachments: "read",
+    upload_task_attachment: "additive",
+    delete_task_attachment: "delete",
   });
+});
+
+test("list_task_attachments maps attachments into the paginated envelope", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/tasks/7/attachments");
+    return {
+      data: [{ id: 1, file: { name: "a.txt", size: 3, mime: "text/plain" }, created: "2026-01-01T00:00:00Z" }],
+      headers: headers({ "x-pagination-total-pages": "1" }),
+    };
+  };
+  const res = await byName(buildTools({ api }), "list_task_attachments").run({ task_id: 7 });
+  assert.deepEqual(res.items, [
+    { id: 1, name: "a.txt", size: 3, mime: "text/plain", created: "2026-01-01T00:00:00Z" },
+  ]);
+});
+
+test("upload_task_attachment builds multipart with the decoded file and returns summaries", async () => {
+  const content = Buffer.from("hello attachment").toString("base64");
+  let seenForm;
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/tasks/7/attachments");
+    seenForm = body;
+    return {
+      data: { success: [{ id: 9, file: { name: "note.txt", size: 16, mime: "text/plain" }, created: null }] },
+      headers: headers(),
+    };
+  };
+  const res = await byName(buildTools({ api }), "upload_task_attachment").run({
+    task_id: 7,
+    filename: "note.txt",
+    content_base64: content,
+  });
+  assert.ok(seenForm instanceof FormData, "body should be FormData");
+  const file = seenForm.get("files");
+  assert.equal(file.name, "note.txt");
+  assert.equal(await file.text(), "hello attachment");
+  assert.deepEqual(res, {
+    task_id: 7,
+    uploaded: [{ id: 9, name: "note.txt", size: 16, mime: "text/plain", created: null }],
+  });
+});
+
+test("upload_task_attachment rejects bad base64 before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: { success: [] }, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "upload_task_attachment").run({ task_id: 7, filename: "x", content_base64: "!!!" }),
+    /base64/,
+  );
+  assert.equal(called, false);
+});
+
+test("upload_task_attachment surfaces a 200-with-errors as a failure", async () => {
+  const content = Buffer.from("x").toString("base64");
+  const api = async () => ({
+    data: { success: [], errors: [{ message: "file too large" }] },
+    headers: headers(),
+  });
+  await assert.rejects(
+    () => byName(buildTools({ api }), "upload_task_attachment").run({ task_id: 7, filename: "x", content_base64: content }),
+    /upload failed/,
+  );
+});
+
+test("delete_task_attachment DELETEs /tasks/{id}/attachments/{attachmentId} and confirms", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/tasks/7/attachments/9");
+    return { data: { message: "ok" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "delete_task_attachment").run({ task_id: 7, attachment_id: 9 });
+  assert.deepEqual(res, { task_id: 7, attachment_id: 9, deleted: true });
 });
 
 test("list_task_relations derives related_tasks from GET /tasks/{id} and shapes them", async () => {

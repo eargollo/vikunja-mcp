@@ -13,11 +13,14 @@ import {
   requireUserId,
   requireCommentId,
   requireComment,
+  requireFilename,
   requireTitle,
   requireQuery,
   optionalHexColor,
   userSummary,
   commentSummary,
+  decodeBase64,
+  attachmentSummary,
   RELATION_KINDS,
   requireRelationKind,
   relationsShape,
@@ -695,6 +698,81 @@ export function buildTools({ api }) {
         const kind = requireRelationKind(relation_kind);
         await api("DELETE", `/tasks/${tid}/relations/${kind}/${otherId}`);
         return { task_id: tid, other_task_id: otherId, relation_kind: kind, deleted: true };
+      },
+    },
+    {
+      name: "list_task_attachments",
+      tier: "read",
+      description:
+        "List a task's attachments (id, name, size, mime, created). Paginated; request successive pages while page < total_pages.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          ...paginationSchema,
+        },
+        required: ["task_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, page, per_page }) => {
+        const tid = requireTaskId(task_id);
+        const resolvedPage = optionalPage(page);
+        const resolvedPerPage = optionalPerPage(per_page);
+        const query = buildQuery({ page: resolvedPage, per_page: resolvedPerPage });
+        const { data, headers } = await api("GET", `/tasks/${tid}/attachments${query}`);
+        const items = (data ?? []).map(attachmentSummary);
+        return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
+      },
+    },
+    {
+      name: "upload_task_attachment",
+      tier: "additive",
+      description:
+        "Attach a file to a task. Provide a filename and the file's bytes as a base64 string.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          filename: { type: "string", description: "Name to store the file as" },
+          content_base64: { type: "string", description: "File contents, base64-encoded" },
+        },
+        required: ["task_id", "filename", "content_base64"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, filename, content_base64 }) => {
+        const tid = requireTaskId(task_id);
+        const name = requireFilename(filename);
+        const bytes = decodeBase64(content_base64);
+        const form = new FormData();
+        form.append("files", new File([bytes], name));
+        const { data } = await api("PUT", `/tasks/${tid}/attachments`, form);
+        const uploaded = (data?.success ?? []).map(attachmentSummary);
+        // Vikunja can return HTTP 200 with an empty success[] and populated
+        // errors[] (size cap, quota, ...) — surface that instead of "nothing".
+        if (uploaded.length === 0 && data?.errors?.length) {
+          throw new Error(`upload failed: ${JSON.stringify(data.errors).slice(0, 400)}`);
+        }
+        return { task_id: tid, uploaded };
+      },
+    },
+    {
+      name: "delete_task_attachment",
+      tier: "delete",
+      description: "Delete an attachment from a task.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          attachment_id: { type: "number", description: "Vikunja attachment id" },
+        },
+        required: ["task_id", "attachment_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, attachment_id }) => {
+        const tid = requireTaskId(task_id);
+        const aid = requirePositiveIntId(attachment_id, "attachment_id");
+        await api("DELETE", `/tasks/${tid}/attachments/${aid}`);
+        return { task_id: tid, attachment_id: aid, deleted: true };
       },
     },
   ];
