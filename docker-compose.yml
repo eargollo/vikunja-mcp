@@ -14,7 +14,9 @@
 
 services:
   vikunja:
-    image: vikunja/vikunja:latest
+    # Pinned for reproducible e2e — bump deliberately (and re-run the suite)
+    # rather than tracking :latest, so upstream releases can't break CI silently.
+    image: vikunja/vikunja:2.3.0
     container_name: vikunja-test
     ports:
       - "3456:3456"

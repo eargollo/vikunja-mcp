@@ -246,7 +246,9 @@ npm run test:coverage  # same, with Node's built-in coverage report (no extra de
 ```
 
 End-to-end tests drive the real MCP server over stdio against a live Vikunja.
-Bring one up with Docker (Node 20+ also required):
+The compose file pins **Vikunja `2.3.0`** (bump deliberately, not `:latest`, so
+upstream releases can't break CI silently). Bring one up with Docker (Node 20+
+also required):
 
 ```bash
 npm install            # once
