@@ -41,6 +41,7 @@ This one is the opposite:
 | `list_notifications` | read | `GET /notifications` |
 | `get_current_user` | read | `GET /user` |
 | `list_api_tokens` | read | `GET /tokens` |
+| `list_webhooks` | read | `GET /projects/{id}/webhooks` |
 | `create_project` | additive | `PUT /projects` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 | `add_label_to_task` | additive | `PUT /tasks/{id}/labels` |
@@ -56,6 +57,7 @@ This one is the opposite:
 | `create_link_share` | additive | `PUT /projects/{id}/shares` |
 | `create_saved_filter` | additive | `PUT /filters` |
 | `subscribe` | additive | `PUT /subscriptions/{entity}/{id}` |
+| `create_webhook` | additive | `PUT /projects/{id}/webhooks` |
 | `move_task_to_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucket_id}/tasks` |
 | `update_saved_filter` | write | `POST /filters/{id}` |
 | `mark_notification_read` | write | `POST /notifications/{id}` |
@@ -72,6 +74,7 @@ This one is the opposite:
 | `delete_task_attachment` | delete | `DELETE /tasks/{id}/attachments/{attachmentId}` |
 | `delete_saved_filter` | delete | `DELETE /filters/{id}` |
 | `unsubscribe` | delete | `DELETE /subscriptions/{entity}/{id}` |
+| `delete_webhook` | delete | `DELETE /projects/{id}/webhooks/{webhookId}` |
 
 `list_projects`, `list_tasks`, and `list_all_tasks` support optional `page` and
 `per_page`. Responses include `{ page, total_pages, count, items }`; paginate by
@@ -138,7 +141,7 @@ data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 | Saved filters (list/create/update/delete) | ✅ shipped |
 | Subscriptions & notifications (list/mark-read, subscribe/unsubscribe) | ✅ shipped |
 | Current user & API tokens (`get_current_user`, list/create tokens) | ✅ shipped |
-| Webhooks | 🔜 [#18](https://github.com/eargollo/vikunja-mcp/issues/18) |
+| Webhooks (list/create/delete) | ✅ shipped |
 
 Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
 

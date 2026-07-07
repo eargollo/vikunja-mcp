@@ -6,6 +6,7 @@
 // carries a `tier` so index.js can gate write/delete behind opt-in env flags.
 
 import {
+  requireAbsoluteUrl,
   requireProjectId,
   requireTaskId,
   requirePositiveIntId,
@@ -43,6 +44,8 @@ import {
   requireExpiresAt,
   requirePermissionsMap,
   tokenSummary,
+  requireEvents,
+  webhookSummary,
   buildQuery,
   paginatedResult,
   taskDetail,
@@ -1229,6 +1232,92 @@ export function buildTools({ api }) {
           throw new Error("Vikunja returned an empty token response");
         }
         return { id: token.id, title: token.title, token: token.token, expires_at: token.expires_at ?? null };
+      },
+    },
+    {
+      name: "list_webhooks",
+      tier: "read",
+      description:
+        "List a project's webhooks (id, target_url, events). The secret is never returned. Paginated.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "number", description: "Vikunja project id" },
+          ...paginationSchema,
+        },
+        required: ["project_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, page, per_page }) => {
+        const pid = requireProjectId(project_id);
+        const resolvedPage = optionalPage(page);
+        const resolvedPerPage = optionalPerPage(per_page);
+        const query = buildQuery({ page: resolvedPage, per_page: resolvedPerPage });
+        const { data, headers } = await api("GET", `/projects/${pid}/webhooks${query}`);
+        const items = (data ?? []).map(webhookSummary);
+        return paginatedResult(items, resolvedPage ?? 1, resolvedPerPage, headers);
+      },
+    },
+    {
+      name: "create_webhook",
+      // additive, not write: the outbound POST is Vikunja's (no SSRF from here),
+      // and the webhook is enumerable via list_webhooks and reversible via
+      // delete_webhook — deletable data, not a minted credential like a token.
+      tier: "additive",
+      description:
+        "Create a webhook on a project: POST events to a target URL. events is a non-empty array of event names (see Vikunja's GET /webhooks/events). Optional secret signs the payloads.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "number", description: "Vikunja project id" },
+          target_url: { type: "string", description: "HTTP(S) URL to POST events to (a trailing slash is stripped)" },
+          events: {
+            type: "array",
+            items: { type: "string" },
+            description: 'Event names, e.g. ["task.created","task.updated"]',
+          },
+          secret: { type: "string", description: "Optional signing secret" },
+        },
+        required: ["project_id", "target_url", "events"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, target_url, events, secret }) => {
+        const pid = requireProjectId(project_id);
+        const body = {
+          target_url: requireAbsoluteUrl(target_url, "target_url"),
+          events: requireEvents(events),
+        };
+        if (secret !== undefined) {
+          if (typeof secret !== "string") {
+            throw new Error("secret must be a string");
+          }
+          body.secret = secret;
+        }
+        const { data: webhook } = await api("PUT", `/projects/${pid}/webhooks`, body);
+        if (!webhook || webhook.id == null) {
+          throw new Error("Vikunja returned an empty webhook response");
+        }
+        return webhookSummary(webhook);
+      },
+    },
+    {
+      name: "delete_webhook",
+      tier: "delete",
+      description: "Delete a project's webhook by id.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "number", description: "Vikunja project id" },
+          webhook_id: { type: "number", description: "Vikunja webhook id" },
+        },
+        required: ["project_id", "webhook_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, webhook_id }) => {
+        const pid = requireProjectId(project_id);
+        const wid = requirePositiveIntId(webhook_id, "webhook_id");
+        await api("DELETE", `/projects/${pid}/webhooks/${wid}`);
+        return { project_id: pid, webhook_id: wid, deleted: true };
       },
     },
   ];
