@@ -12,6 +12,8 @@ import {
   optionalPerPage,
   buildQuery,
   paginatedResult,
+  listResult,
+  okResult,
   flagEnabled,
   tierAllowed,
   requireTaskId,
@@ -212,6 +214,15 @@ test("optionalOrder normalizes asc/desc and rejects others", () => {
   assert.equal(optionalOrder("asc"), "asc");
   assert.equal(optionalOrder("DESC"), "desc");
   assert.throws(() => optionalOrder("sideways"), /asc.*desc/);
+});
+
+test("listResult wraps items with count and optional context", () => {
+  assert.deepEqual(listResult([{ id: 1 }]), { count: 1, items: [{ id: 1 }] });
+  assert.deepEqual(listResult([], { task_id: 7 }), { task_id: 7, count: 0, items: [] });
+});
+
+test("okResult returns a uniform mutation confirmation", () => {
+  assert.deepEqual(okResult({ task_id: 7, label_id: 3 }), { ok: true, task_id: 7, label_id: 3 });
 });
 
 test("taskDetail curates fields, nulls Vikunja zero-dates, maps labels/assignees", () => {

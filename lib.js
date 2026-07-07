@@ -343,9 +343,20 @@ export function optionalOrder(value) {
   if (value === undefined) return undefined;
   const order = String(value).toLowerCase();
   if (order !== "asc" && order !== "desc") {
-    throw new Error("order_by must be 'asc' or 'desc'");
+    throw new Error("order must be 'asc' or 'desc'");
   }
   return order;
+}
+
+// Non-paginated list envelope: every list tool returns { ...context, count, items }
+// except list_task_relations (keyed map — documented exception).
+export function listResult(items, context = {}) {
+  return { ...context, count: items.length, items };
+}
+
+// Deletes, toggles, and association mutations: uniform { ok: true, ...ids }.
+export function okResult(fields) {
+  return { ok: true, ...fields };
 }
 
 // Shape Vikunja's rich task object into a curated, agent-friendly detail view.

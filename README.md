@@ -14,9 +14,11 @@ This one is the opposite:
 - **One egress point** — every request goes through a single `api()` function
   that only ever calls `VIKUNJA_URL` with your token. Grep it; that's the whole
   network surface.
-- **Scoped: read + additive only** — `list_projects`, `list_tasks`, `create_task`.
-  No delete, no bulk, no "call arbitrary endpoint". A misbehaving/hijacked agent
-  can add a task or read a list — nothing destructive.
+- **Scoped: read + additive only** — list and create tools that affect only the
+  token holder's own data. Anything that grants access to a third party (shares,
+  link shares, webhooks) or mints credentials (API tokens) is **write**-gated.
+  No delete, no bulk, no "call arbitrary endpoint". A hijacked agent on a default
+  install can add a task or read a list — not share your projects or exfiltrate data.
 - **Secrets from env**, never hardcoded.
 - **No build step** — plain Node ESM, `node index.js`.
 
@@ -52,12 +54,12 @@ This one is the opposite:
 | `create_bucket` | additive | `PUT /projects/{id}/views/{view}/buckets` |
 | `update_task` | write | `POST /tasks/{id}` |
 | `create_team` | additive | `PUT /teams` |
-| `share_project_with_user` | additive | `PUT /projects/{id}/users` |
-| `share_project_with_team` | additive | `PUT /projects/{id}/teams` |
-| `create_link_share` | additive | `PUT /projects/{id}/shares` |
+| `share_project_with_user` | write | `PUT /projects/{id}/users` |
+| `share_project_with_team` | write | `PUT /projects/{id}/teams` |
+| `create_link_share` | write | `PUT /projects/{id}/shares` |
 | `create_saved_filter` | additive | `PUT /filters` |
 | `subscribe` | additive | `PUT /subscriptions/{entity}/{id}` |
-| `create_webhook` | additive | `PUT /projects/{id}/webhooks` |
+| `create_webhook` | write | `PUT /projects/{id}/webhooks` |
 | `move_task_to_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucket_id}/tasks` |
 | `update_saved_filter` | write | `POST /filters/{id}` |
 | `mark_notification_read` | write | `POST /notifications/{id}` |
@@ -84,7 +86,7 @@ size.
 
 `list_tasks` and `list_all_tasks` also take an optional `filter` (a Vikunja
 filter query like `done = false && priority >= 3`), `sort_by` (a field name), and
-`order_by` (`asc`/`desc`). `get_task` returns a task's full detail (description,
+`order` (`asc`/`desc`). `get_task` returns a task's full detail (description,
 dates, priority, percent_done, labels, assignees). `create_task` takes optional
 `description`, `due_date`, and `priority`. `update_task` (write) changes only
 the fields you pass; `set_task_done` (write) completes or reopens a task.
@@ -107,20 +109,26 @@ OpenClaw, the SDK) calls the tools by name. Arguments and results are JSON.
   "items": [ { "id": 42, "title": "Ship v0.1.0", "done": false } ] }
 
 // create_task    { "project_id": 7, "title": "Write the changelog" }
-{ "id": 43, "title": "Write the changelog" }
+{ "id": 43, "title": "Write the changelog", "done": false, "project_id": 7, ... }
+
+// assign_user    { "task_id": 42, "user_id": 3 }
+{ "ok": true, "task_id": 42, "user_id": 3 }
 ```
 
-List tools return a **paginated envelope** — iterate `page` while
-`page < total_pages`. Invalid input (bad `project_id`, empty `title`, unknown
-tool) comes back as an MCP tool error (`isError: true`) with a message, never a
-crash.
+List tools return `{ count, items }` (plus pagination or context fields).
+`list_task_relations` is the exception: it returns a keyed `relations` map.
+Mutations return either the entity detail (`create_task` → same shape as
+`get_task`) or `{ ok: true, ...ids }` for deletes and association changes.
+Inputs use `*_id`; list/detail outputs use `id`.
+
+Invalid input (bad `project_id`, empty `title`, unknown tool) comes back as an MCP tool error (`isError: true`) with a message, never a crash.
 
 ## API coverage
 
 The goal is to cover the whole Vikunja v1 API, added TDD-style (unit + e2e). To
 keep the [trust posture](#why-this-exists), tools are tiered: **read** and
-**additive** are always on; **write** (update) tools require
-`VIKUNJA_MCP_ALLOW_WRITE=1` and **delete** tools require
+**additive** are always on; **write** (update, sharing, egress, credential minting)
+tools require `VIKUNJA_MCP_ALLOW_WRITE=1` and **delete** tools require
 `VIKUNJA_MCP_ALLOW_DELETE=1`, so a default install can never modify or destroy
 data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 
@@ -151,7 +159,7 @@ Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
 | --- | --- |
 | `VIKUNJA_URL` | `https://app.vikunja.cloud/api/v1` (note the `/api/v1`) |
 | `VIKUNJA_API_TOKEN` | `tk_...` (a Vikunja API token, scoped to Projects + Tasks) |
-| `VIKUNJA_MCP_ALLOW_WRITE` | `1` to also expose **write** (update) tools — off by default |
+| `VIKUNJA_MCP_ALLOW_WRITE` | `1` to also expose **write** tools (updates, sharing, webhooks, API tokens) — off by default |
 | `VIKUNJA_MCP_ALLOW_DELETE` | `1` to also expose **delete** (destructive) tools — off by default |
 
 Read and additive tools are always available. Mutating and destructive tools

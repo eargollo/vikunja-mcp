@@ -60,9 +60,9 @@ test("each tool has the expected tier", () => {
     move_task_to_bucket: "write",
     list_teams: "read",
     create_team: "additive",
-    share_project_with_user: "additive",
-    share_project_with_team: "additive",
-    create_link_share: "additive",
+    share_project_with_user: "write",
+    share_project_with_team: "write",
+    create_link_share: "write",
     list_saved_filters: "read",
     create_saved_filter: "additive",
     update_saved_filter: "write",
@@ -75,7 +75,7 @@ test("each tool has the expected tier", () => {
     list_api_tokens: "read",
     create_api_token: "write",
     list_webhooks: "read",
-    create_webhook: "additive",
+    create_webhook: "write",
     delete_webhook: "delete",
   });
 });
@@ -138,7 +138,7 @@ test("delete_webhook DELETEs /projects/{id}/webhooks/{webhookId} and confirms", 
     return { data: { message: "ok" }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "delete_webhook").run({ project_id: 4, webhook_id: 8 });
-  assert.deepEqual(res, { project_id: 4, webhook_id: 8, deleted: true });
+  assert.deepEqual(res, { ok: true, project_id: 4, webhook_id: 8 });
 });
 
 test("get_current_user fetches /user and returns the user summary", async () => {
@@ -219,9 +219,9 @@ test("mark_notification_read POSTs { read } (default true), can mark unread", as
   };
   const tools = buildTools({ api });
   assert.deepEqual(await byName(tools, "mark_notification_read").run({ notification_id: 3 }), {
+    ok: true,
     notification_id: 3,
     read: true,
-    marked: true,
   });
   await byName(tools, "mark_notification_read").run({ notification_id: 3, read: false });
   assert.deepEqual(seen, [
@@ -237,7 +237,7 @@ test("subscribe validates entity + id and PUTs the subscription", async () => {
     return { data: { id: 1, entity: "task", entity_id: 7 }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "subscribe").run({ entity: "task", entity_id: 7 });
-  assert.deepEqual(res, { entity: "task", entity_id: 7, subscribed: true });
+  assert.deepEqual(res, { ok: true, entity: "task", entity_id: 7 });
 });
 
 test("subscribe rejects an unknown entity before calling the api", async () => {
@@ -260,7 +260,7 @@ test("unsubscribe DELETEs /subscriptions/{entity}/{id} and confirms", async () =
     return { data: { message: "ok" }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "unsubscribe").run({ entity: "project", entity_id: 4 });
-  assert.deepEqual(res, { entity: "project", entity_id: 4, unsubscribed: true });
+  assert.deepEqual(res, { ok: true, entity: "project", entity_id: 4 });
 });
 
 test("list_saved_filters extracts negative-id projects and maps to filter ids", async () => {
@@ -278,7 +278,7 @@ test("list_saved_filters extracts negative-id projects and maps to filter ids", 
   };
   const res = await byName(buildTools({ api }), "list_saved_filters").run({});
   // filter_id = -project_id - 1  →  -3 => 2, -4 => 3
-  assert.deepEqual(res, { filters: [{ id: 2, title: "F1" }, { id: 3, title: "F2" }] });
+  assert.deepEqual(res, { count: 2, items: [{ id: 2, title: "F1" }, { id: 3, title: "F2" }] });
 });
 
 test("create_saved_filter PUTs title + filter query (+ optional description)", async () => {
@@ -286,14 +286,14 @@ test("create_saved_filter PUTs title + filter query (+ optional description)", a
     assert.equal(method, "PUT");
     assert.equal(path, "/filters");
     assert.deepEqual(body, { title: "Urgent", description: "d", filters: { filter: "priority >= 4" } });
-    return { data: { id: 7, title: "Urgent" }, headers: headers() };
+    return { data: { id: 7, title: "Urgent", description: "d", filters: { filter: "priority >= 4" } }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "create_saved_filter").run({
     title: " Urgent ",
     description: "d",
     filter: "priority >= 4",
   });
-  assert.deepEqual(res, { id: 7, title: "Urgent" });
+  assert.deepEqual(res, { id: 7, title: "Urgent", description: "d", filter: "priority >= 4" });
 });
 
 test("update_saved_filter fetch-merges, preserving the rest of the filters object", async () => {
@@ -371,7 +371,7 @@ test("delete_saved_filter DELETEs /filters/{id} and confirms", async () => {
     return { data: { message: "ok" }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "delete_saved_filter").run({ filter_id: 5 });
-  assert.deepEqual(res, { id: 5, deleted: true });
+  assert.deepEqual(res, { ok: true, filter_id: 5 });
 });
 
 test("list_teams maps id/name into the paginated envelope", async () => {
@@ -403,7 +403,7 @@ test("share_project_with_user PUTs { user_id, permission } (default read)", asyn
   };
   const tools = buildTools({ api });
   const def = await byName(tools, "share_project_with_user").run({ project_id: 4, user_id: 9 });
-  assert.deepEqual(def, { project_id: 4, user_id: 9, permission: 0, shared: true });
+  assert.deepEqual(def, { ok: true, project_id: 4, user_id: 9, permission: 0 });
   const rw = await byName(tools, "share_project_with_user").run({ project_id: 4, user_id: 9, permission: 1 });
   assert.equal(rw.permission, 1);
   assert.deepEqual(seen, [
@@ -420,7 +420,7 @@ test("share_project_with_team PUTs { team_id, permission }", async () => {
     return { data: { team_id: 2, permission: 2 }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "share_project_with_team").run({ project_id: 4, team_id: 2, permission: 2 });
-  assert.deepEqual(res, { project_id: 4, team_id: 2, permission: 2, shared: true });
+  assert.deepEqual(res, { ok: true, project_id: 4, team_id: 2, permission: 2 });
 });
 
 test("create_link_share PUTs { permission } and returns the hash", async () => {
@@ -467,7 +467,8 @@ test("list_buckets resolves the kanban view and lists its buckets", async () => 
   assert.deepEqual(res, {
     project_id: 5,
     view_id: 9,
-    buckets: [{ id: 1, title: "To-Do", limit: 0, count: 2 }],
+    count: 1,
+    items: [{ id: 1, title: "To-Do", limit: 0, count: 2 }],
   });
 });
 
@@ -479,7 +480,7 @@ test("create_bucket PUTs the title under the kanban view", async () => {
     return { data: { id: 12, title: "Doing" }, headers: new Headers() };
   });
   const res = await byName(buildTools({ api }), "create_bucket").run({ project_id: 5, title: " Doing " });
-  assert.deepEqual(res, { id: 12, title: "Doing", view_id: 9 });
+  assert.deepEqual(res, { id: 12, title: "Doing", limit: 0, count: 0, view_id: 9 });
 });
 
 test("move_task_to_bucket POSTs { task_id } to the bucket's tasks endpoint", async () => {
@@ -490,7 +491,7 @@ test("move_task_to_bucket POSTs { task_id } to the bucket's tasks endpoint", asy
     return { data: { bucket_id: 2, task_id: 7 }, headers: new Headers() };
   });
   const res = await byName(buildTools({ api }), "move_task_to_bucket").run({ project_id: 5, bucket_id: 2, task_id: 7 });
-  assert.deepEqual(res, { project_id: 5, view_id: 9, bucket_id: 2, task_id: 7, moved: true });
+  assert.deepEqual(res, { ok: true, project_id: 5, view_id: 9, bucket_id: 2, task_id: 7 });
 });
 
 test("bucket tools resolve the FIRST kanban view when several exist", async () => {
@@ -561,7 +562,8 @@ test("upload_task_attachment builds multipart with the decoded file and returns 
   assert.equal(await file.text(), "hello attachment");
   assert.deepEqual(res, {
     task_id: 7,
-    uploaded: [{ id: 9, name: "note.txt", size: 16, mime: "text/plain", created: null }],
+    count: 1,
+    items: [{ id: 9, name: "note.txt", size: 16, mime: "text/plain", created: null }],
   });
 });
 
@@ -597,7 +599,7 @@ test("delete_task_attachment DELETEs /tasks/{id}/attachments/{attachmentId} and 
     return { data: { message: "ok" }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "delete_task_attachment").run({ task_id: 7, attachment_id: 9 });
-  assert.deepEqual(res, { task_id: 7, attachment_id: 9, deleted: true });
+  assert.deepEqual(res, { ok: true, task_id: 7, attachment_id: 9 });
 });
 
 test("list_task_relations derives related_tasks from GET /tasks/{id} and shapes them", async () => {
@@ -625,7 +627,7 @@ test("create_task_relation validates kind + ids and PUTs the relation", async ()
     other_task_id: 8,
     relation_kind: "blocking",
   });
-  assert.deepEqual(res, { task_id: 7, other_task_id: 8, relation_kind: "blocking", created: true });
+  assert.deepEqual(res, { ok: true, task_id: 7, other_task_id: 8, relation_kind: "blocking" });
 });
 
 test("create_task_relation rejects an unknown relation_kind before calling the api", async () => {
@@ -665,7 +667,7 @@ test("delete_task_relation DELETEs /tasks/{id}/relations/{kind}/{otherId} and co
     other_task_id: 8,
     relation_kind: "related",
   });
-  assert.deepEqual(res, { task_id: 7, other_task_id: 8, relation_kind: "related", deleted: true });
+  assert.deepEqual(res, { ok: true, task_id: 7, other_task_id: 8, relation_kind: "related" });
 });
 
 test("list_task_comments maps comments into the paginated envelope", async () => {
@@ -712,7 +714,7 @@ test("delete_task_comment DELETEs /tasks/{id}/comments/{commentId} and confirms"
     return { data: { message: "ok" }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "delete_task_comment").run({ task_id: 7, comment_id: 9 });
-  assert.deepEqual(res, { task_id: 7, comment_id: 9, deleted: true });
+  assert.deepEqual(res, { ok: true, task_id: 7, comment_id: 9 });
 });
 
 test("search_users hits /users?s= and maps id/username/name; null → []", async () => {
@@ -722,11 +724,11 @@ test("search_users hits /users?s= and maps id/username/name; null → []", async
     return { data: [{ id: 1, username: "mctester", name: "MC", extra: "drop" }], headers: headers() };
   };
   const res = await byName(buildTools({ api }), "search_users").run({ query: " mc " });
-  assert.deepEqual(res, { users: [{ id: 1, username: "mctester", name: "MC" }] });
+  assert.deepEqual(res, { count: 1, items: [{ id: 1, username: "mctester", name: "MC" }] });
 
   const apiNull = async () => ({ data: null, headers: headers() });
   const empty = await byName(buildTools({ api: apiNull }), "search_users").run({ query: "zzz" });
-  assert.deepEqual(empty, { users: [] });
+  assert.deepEqual(empty, { count: 0, items: [] });
 });
 
 test("search_users rejects an empty query before calling the api", async () => {
@@ -749,7 +751,7 @@ test("list_task_assignees derives assignees from GET /tasks/{id} (the list endpo
     };
   };
   const res = await byName(buildTools({ api }), "list_task_assignees").run({ task_id: 7 });
-  assert.deepEqual(res, { task_id: 7, assignees: [{ id: 1, username: "me", name: "" }] });
+  assert.deepEqual(res, { task_id: 7, count: 1, items: [{ id: 1, username: "me", name: "" }] });
 });
 
 test("assign_user PUTs { user_id } and confirms", async () => {
@@ -760,7 +762,7 @@ test("assign_user PUTs { user_id } and confirms", async () => {
     return { data: { user_id: 3 }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "assign_user").run({ task_id: 7, user_id: 3 });
-  assert.deepEqual(res, { task_id: 7, user_id: 3, assigned: true });
+  assert.deepEqual(res, { ok: true, task_id: 7, user_id: 3 });
 });
 
 test("unassign_user DELETEs /tasks/{id}/assignees/{userId} and confirms", async () => {
@@ -770,7 +772,7 @@ test("unassign_user DELETEs /tasks/{id}/assignees/{userId} and confirms", async 
     return { data: { message: "ok" }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "unassign_user").run({ task_id: 7, user_id: 3 });
-  assert.deepEqual(res, { task_id: 7, user_id: 3, unassigned: true });
+  assert.deepEqual(res, { ok: true, task_id: 7, user_id: 3 });
 });
 
 test("list_labels maps id/title/hex_color into the paginated envelope", async () => {
@@ -805,7 +807,7 @@ test("add_label_to_task validates ids and PUTs { label_id }", async () => {
     return { data: { label_id: 3 }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "add_label_to_task").run({ task_id: 7, label_id: 3 });
-  assert.deepEqual(res, { task_id: 7, label_id: 3, added: true });
+  assert.deepEqual(res, { ok: true, task_id: 7, label_id: 3 });
 });
 
 test("add_label_to_task rejects a bad label_id before calling the api", async () => {
@@ -828,7 +830,7 @@ test("remove_label_from_task DELETEs /tasks/{id}/labels/{labelId} and confirms",
     return { data: { message: "ok" }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "remove_label_from_task").run({ task_id: 7, label_id: 3 });
-  assert.deepEqual(res, { task_id: 7, label_id: 3, removed: true });
+  assert.deepEqual(res, { ok: true, task_id: 7, label_id: 3 });
 });
 
 test("get_project validates id, fetches /projects/{id}, shapes the detail", async () => {
@@ -847,14 +849,22 @@ test("create_project PUTs title + optional description/parent and returns id/tit
     assert.equal(method, "PUT");
     assert.equal(path, "/projects");
     assert.deepEqual(body, { title: "New", description: "d", parent_project_id: 2 });
-    return { data: { id: 8, title: "New" }, headers: headers() };
+    return { data: { id: 8, title: "New", description: "d", parent_project_id: 2, is_archived: false }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "create_project").run({
     title: "  New  ",
     description: "d",
     parent_project_id: 2,
   });
-  assert.deepEqual(res, { id: 8, title: "New" });
+  assert.deepEqual(res, {
+    id: 8,
+    title: "New",
+    description: "d",
+    identifier: "",
+    parent_project_id: 2,
+    is_archived: false,
+    is_favorite: false,
+  });
 });
 
 test("update_project fetch-merges current fields, overriding only the change", async () => {
@@ -929,7 +939,7 @@ test("delete_project DELETEs and confirms", async () => {
     return { data: { message: "Successfully deleted." }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "delete_project").run({ project_id: 4 });
-  assert.deepEqual(res, { id: 4, deleted: true });
+  assert.deepEqual(res, { ok: true, project_id: 4 });
 });
 
 test("delete_project validates id before calling the api", async () => {
@@ -974,7 +984,7 @@ test("get_task rejects a bad id before calling the api", async () => {
   assert.equal(called, false);
 });
 
-test("list_tasks forwards filter/sort_by/order_by alongside pagination", async () => {
+test("list_tasks forwards filter/sort_by/order alongside pagination", async () => {
   let seenPath;
   const api = async (_m, path) => {
     seenPath = path;
@@ -984,7 +994,7 @@ test("list_tasks forwards filter/sort_by/order_by alongside pagination", async (
     project_id: 3,
     filter: "done = false",
     sort_by: "priority",
-    order_by: "desc",
+    order: "desc",
     page: 2,
   });
   assert.equal(seenPath, "/projects/3/tasks?filter=done+%3D+false&sort_by=priority&order_by=desc&page=2");
@@ -1002,20 +1012,20 @@ test("list_all_tasks hits /tasks with filter/sort and maps id/title/done/project
   const res = await byName(buildTools({ api }), "list_all_tasks").run({
     filter: "priority >= 3",
     sort_by: "due_date",
-    order_by: "asc",
+    order: "asc",
   });
   assert.deepEqual(res.items, [{ id: 5, title: "A", done: false, project_id: 2 }]);
   assert.equal(res.total_pages, 1);
 });
 
-test("list_all_tasks rejects an invalid order_by before calling the api", async () => {
+test("list_all_tasks rejects an invalid order before calling the api", async () => {
   let called = false;
   const api = async () => {
     called = true;
     return { data: [], headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "list_all_tasks").run({ order_by: "up" }),
+    () => byName(buildTools({ api }), "list_all_tasks").run({ order: "up" }),
     /asc.*desc/,
   );
   assert.equal(called, false);
@@ -1103,15 +1113,18 @@ test("list_tasks maps tasks under the validated project path", async () => {
   assert.deepEqual(res.items, [{ id: 42, title: "T", done: false }]);
 });
 
-test("create_task trims the title, PUTs it, and returns id/title", async () => {
+test("create_task trims the title, PUTs it, and returns the task detail", async () => {
   const api = async (method, path, body) => {
     assert.equal(method, "PUT");
     assert.equal(path, "/projects/5/tasks");
     assert.deepEqual(body, { title: "Hello" });
-    return { data: { id: 9, title: "Hello" }, headers: headers() };
+    return { data: { id: 9, title: "Hello", project_id: 5, done: false }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "create_task").run({ project_id: 5, title: "  Hello  " });
-  assert.deepEqual(res, { id: 9, title: "Hello" });
+  assert.equal(res.id, 9);
+  assert.equal(res.title, "Hello");
+  assert.equal(res.project_id, 5);
+  assert.equal(res.done, false);
 });
 
 test("create_task includes optional description/due_date/priority in the body", async () => {
@@ -1124,7 +1137,7 @@ test("create_task includes optional description/due_date/priority in the body", 
       due_date: "2026-08-01T00:00:00.000Z",
       priority: 4,
     });
-    return { data: { id: 9, title: "Hello" }, headers: headers() };
+    return { data: { id: 9, title: "Hello", project_id: 5, done: false, description: "d", priority: 4, due_date: "2026-08-01T00:00:00.000Z" }, headers: headers() };
   };
   const res = await byName(buildTools({ api }), "create_task").run({
     project_id: 5,
@@ -1133,7 +1146,10 @@ test("create_task includes optional description/due_date/priority in the body", 
     due_date: "2026-08-01",
     priority: 4,
   });
-  assert.deepEqual(res, { id: 9, title: "Hello" });
+  assert.equal(res.id, 9);
+  assert.equal(res.title, "Hello");
+  assert.equal(res.description, "d");
+  assert.equal(res.priority, 4);
 });
 
 test("update_task POSTs only the provided fields and returns the shaped detail", async () => {

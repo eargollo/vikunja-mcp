@@ -76,13 +76,11 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "assign_user",
     "create_bucket",
     "create_label",
-    "create_link_share",
     "create_project",
     "create_saved_filter",
     "create_task",
     "create_task_relation",
     "create_team",
-    "create_webhook",
     "get_current_user",
     "get_project",
     "get_task",
@@ -101,8 +99,6 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "list_teams",
     "list_webhooks",
     "search_users",
-    "share_project_with_team",
-    "share_project_with_user",
     "subscribe",
     "upload_task_attachment",
   ]);
@@ -123,6 +119,10 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "mark_notification_read",
     "unsubscribe",
     "create_api_token",
+    "create_link_share",
+    "create_webhook",
+    "share_project_with_team",
+    "share_project_with_user",
     "delete_webhook",
   ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
@@ -194,7 +194,7 @@ test("list_all_tasks finds a created task across projects and supports filter", 
   const all = parse(
     await client.callTool({
       name: "list_all_tasks",
-      arguments: { filter: "done = false", sort_by: "id", order_by: "desc" },
+      arguments: { filter: "done = false", sort_by: "id", order: "desc" },
     }),
   );
   const found = all.items.find((t) => t.id === created.id);
@@ -316,7 +316,7 @@ test("delete_project removes a project (delete tier)", { skip }, async () => {
     await wc.callTool({ name: "create_project", arguments: { title: `e2e proj del ${process.hrtime.bigint()}` } }),
   );
   const res = parse(await wc.callTool({ name: "delete_project", arguments: { project_id: created.id } }));
-  assert.deepEqual(res, { id: created.id, deleted: true });
+  assert.deepEqual(res, { ok: true, project_id: created.id });
   // it should be gone now
   const after = await wc.callTool({ name: "get_project", arguments: { project_id: created.id } });
   assert.ok(after.isError, "deleted project should no longer be fetchable");
@@ -355,7 +355,7 @@ test("create_label, list_labels, add/remove label round-trip", { skip }, async (
   const removed = parse(
     await wc.callTool({ name: "remove_label_from_task", arguments: { task_id: task.id, label_id: label.id } }),
   );
-  assert.deepEqual(removed, { task_id: task.id, label_id: label.id, removed: true });
+  assert.deepEqual(removed, { ok: true, task_id: task.id, label_id: label.id });
   const after = parse(await client.callTool({ name: "get_task", arguments: { task_id: task.id } }));
   assert.ok(!(after.labels ?? []).some((l) => l.id === label.id), "label detached");
 });
@@ -371,7 +371,7 @@ test("remove_label_from_task is not callable without the delete flag", { skip },
 
 test("search_users returns a (possibly empty) user list without error", { skip }, async () => {
   const res = parse(await client.callTool({ name: "search_users", arguments: { query: "a" } }));
-  assert.ok(Array.isArray(res.users), "users should be an array");
+  assert.ok(Array.isArray(res.items), "items should be an array");
 });
 
 test("assign_user, list_task_assignees, unassign_user round-trip", { skip }, async () => {
@@ -389,17 +389,17 @@ test("assign_user, list_task_assignees, unassign_user round-trip", { skip }, asy
   const assigned = parse(
     await client.callTool({ name: "assign_user", arguments: { task_id: task.id, user_id: userId } }),
   );
-  assert.deepEqual(assigned, { task_id: task.id, user_id: userId, assigned: true });
+  assert.deepEqual(assigned, { ok: true, task_id: task.id, user_id: userId });
 
   const list = parse(await client.callTool({ name: "list_task_assignees", arguments: { task_id: task.id } }));
-  assert.ok(list.assignees.some((u) => u.id === userId), "assignee shows up");
+  assert.ok(list.items.some((u) => u.id === userId), "assignee shows up");
 
   const unassigned = parse(
     await wc.callTool({ name: "unassign_user", arguments: { task_id: task.id, user_id: userId } }),
   );
-  assert.deepEqual(unassigned, { task_id: task.id, user_id: userId, unassigned: true });
+  assert.deepEqual(unassigned, { ok: true, task_id: task.id, user_id: userId });
   const after = parse(await client.callTool({ name: "list_task_assignees", arguments: { task_id: task.id } }));
-  assert.ok(!after.assignees.some((u) => u.id === userId), "assignee removed");
+  assert.ok(!after.items.some((u) => u.id === userId), "assignee removed");
 });
 
 test("unassign_user is not callable without the delete flag", { skip }, async () => {
@@ -429,7 +429,7 @@ test("add_task_comment, list_task_comments, delete_task_comment round-trip", { s
   const deleted = parse(
     await wc.callTool({ name: "delete_task_comment", arguments: { task_id: task.id, comment_id: added.id } }),
   );
-  assert.deepEqual(deleted, { task_id: task.id, comment_id: added.id, deleted: true });
+  assert.deepEqual(deleted, { ok: true, task_id: task.id, comment_id: added.id });
   const after = parse(await client.callTool({ name: "list_task_comments", arguments: { task_id: task.id } }));
   assert.ok(!after.items.some((c) => c.id === added.id), "comment removed");
 });
@@ -455,7 +455,7 @@ test("create_task_relation, list_task_relations, delete_task_relation round-trip
       arguments: { task_id: a.id, other_task_id: b.id, relation_kind: "related" },
     }),
   );
-  assert.deepEqual(created, { task_id: a.id, other_task_id: b.id, relation_kind: "related", created: true });
+  assert.deepEqual(created, { ok: true, task_id: a.id, other_task_id: b.id, relation_kind: "related" });
 
   const rels = parse(await client.callTool({ name: "list_task_relations", arguments: { task_id: a.id } }));
   assert.ok((rels.relations.related ?? []).some((t) => t.id === b.id), "related task shows up");
@@ -466,7 +466,7 @@ test("create_task_relation, list_task_relations, delete_task_relation round-trip
       arguments: { task_id: a.id, other_task_id: b.id, relation_kind: "related" },
     }),
   );
-  assert.equal(deleted.deleted, true);
+  assert.equal(deleted.ok, true);
   const after = parse(await client.callTool({ name: "list_task_relations", arguments: { task_id: a.id } }));
   assert.ok(!(after.relations.related ?? []).some((t) => t.id === b.id), "relation removed");
 });
@@ -497,10 +497,10 @@ test("upload_task_attachment, list_task_attachments, delete_task_attachment roun
       arguments: { task_id: task.id, filename, content_base64: content },
     }),
   );
-  assert.equal(up.uploaded.length, 1);
-  assert.equal(up.uploaded[0].name, filename);
-  assert.equal(up.uploaded[0].size, Buffer.byteLength("hello from e2e"));
-  const attId = up.uploaded[0].id;
+  assert.equal(up.items.length, 1);
+  assert.equal(up.items[0].name, filename);
+  assert.equal(up.items[0].size, Buffer.byteLength("hello from e2e"));
+  const attId = up.items[0].id;
 
   const list = parse(await client.callTool({ name: "list_task_attachments", arguments: { task_id: task.id } }));
   assert.ok(list.items.some((a) => a.id === attId), "attachment appears in list");
@@ -508,7 +508,7 @@ test("upload_task_attachment, list_task_attachments, delete_task_attachment roun
   const del = parse(
     await wc.callTool({ name: "delete_task_attachment", arguments: { task_id: task.id, attachment_id: attId } }),
   );
-  assert.deepEqual(del, { task_id: task.id, attachment_id: attId, deleted: true });
+  assert.deepEqual(del, { ok: true, task_id: task.id, attachment_id: attId });
   const after = parse(await client.callTool({ name: "list_task_attachments", arguments: { task_id: task.id } }));
   assert.ok(!after.items.some((a) => a.id === attId), "attachment removed");
 });
@@ -526,7 +526,7 @@ test("list_buckets, create_bucket, move_task_to_bucket round-trip", { skip }, as
 
   const before = parse(await client.callTool({ name: "list_buckets", arguments: { project_id: pid } }));
   assert.ok(Number.isInteger(before.view_id), "resolved a kanban view");
-  assert.ok(before.buckets.length >= 1, "kanban view seeds at least one bucket");
+  assert.ok(before.items.length >= 1, "kanban view seeds at least one bucket");
 
   const bucket = parse(
     await client.callTool({ name: "create_bucket", arguments: { project_id: pid, title: `e2e col ${process.hrtime.bigint()}` } }),
@@ -540,7 +540,7 @@ test("list_buckets, create_bucket, move_task_to_bucket round-trip", { skip }, as
   const moved = parse(
     await wc.callTool({ name: "move_task_to_bucket", arguments: { project_id: pid, bucket_id: bucket.id, task_id: task.id } }),
   );
-  assert.deepEqual(moved, { project_id: pid, view_id: before.view_id, bucket_id: bucket.id, task_id: task.id, moved: true });
+  assert.deepEqual(moved, { ok: true, project_id: pid, view_id: before.view_id, bucket_id: bucket.id, task_id: task.id });
 });
 
 test("move_task_to_bucket is not callable without the write flag", { skip }, async () => {
@@ -562,18 +562,19 @@ test("create_team then list_teams round-trips (additive + read)", { skip }, asyn
 });
 
 test("share_project_with_team and create_link_share succeed", { skip }, async () => {
+  const wc = await getWriteClient();
   const team = parse(await client.callTool({ name: "create_team", arguments: { name: `e2e share ${process.hrtime.bigint()}` } }));
   const project = parse(await client.callTool({ name: "create_project", arguments: { title: `e2e shared ${process.hrtime.bigint()}` } }));
 
   const shared = parse(
-    await client.callTool({
+    await wc.callTool({
       name: "share_project_with_team",
       arguments: { project_id: project.id, team_id: team.id, permission: 1 },
     }),
   );
-  assert.deepEqual(shared, { project_id: project.id, team_id: team.id, permission: 1, shared: true });
+  assert.deepEqual(shared, { ok: true, project_id: project.id, team_id: team.id, permission: 1 });
 
-  const link = parse(await client.callTool({ name: "create_link_share", arguments: { project_id: project.id, permission: 0 } }));
+  const link = parse(await wc.callTool({ name: "create_link_share", arguments: { project_id: project.id, permission: 0 } }));
   assert.equal(link.project_id, project.id);
   assert.ok(typeof link.hash === "string" && link.hash.length > 0, "returns a share hash");
 });
@@ -584,12 +585,12 @@ test("list_notifications returns a (possibly empty) list without error", { skip 
 });
 
 test("create_webhook, list_webhooks, delete_webhook round-trip", { skip }, async () => {
-  const wc = await getWriteClient(); // delete_webhook is delete-tier
+  const wc = await getWriteClient(); // create_webhook is write-tier; delete_webhook is delete-tier
   const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
   const pid = projects.items[0].id;
   const url = `https://example.com/hook/${process.hrtime.bigint()}`;
   const created = parse(
-    await client.callTool({
+    await wc.callTool({
       name: "create_webhook",
       arguments: { project_id: pid, target_url: url, events: ["task.created"], secret: "s3cr3t" },
     }),
@@ -603,7 +604,16 @@ test("create_webhook, list_webhooks, delete_webhook round-trip", { skip }, async
   assert.ok(list.items.some((w) => w.id === created.id), "webhook appears in list");
 
   const del = parse(await wc.callTool({ name: "delete_webhook", arguments: { project_id: pid, webhook_id: created.id } }));
-  assert.deepEqual(del, { project_id: pid, webhook_id: created.id, deleted: true });
+  assert.deepEqual(del, { ok: true, project_id: pid, webhook_id: created.id });
+});
+
+test("create_webhook is not callable without the write flag", { skip }, async () => {
+  const result = await client.callTool({
+    name: "create_webhook",
+    arguments: { project_id: 1, target_url: "https://example.com/hook", events: ["task.created"] },
+  });
+  assert.ok(result.isError, "egress tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
 });
 
 test("delete_webhook is not callable without the delete flag", { skip }, async () => {
@@ -656,9 +666,9 @@ test("subscribe then unsubscribe round-trips a task subscription", { skip }, asy
     await client.callTool({ name: "create_task", arguments: { project_id: projects.items[0].id, title: `e2e sub ${process.hrtime.bigint()}` } }),
   );
   const sub = parse(await client.callTool({ name: "subscribe", arguments: { entity: "task", entity_id: task.id } }));
-  assert.deepEqual(sub, { entity: "task", entity_id: task.id, subscribed: true });
+  assert.deepEqual(sub, { ok: true, entity: "task", entity_id: task.id });
   const unsub = parse(await wc.callTool({ name: "unsubscribe", arguments: { entity: "task", entity_id: task.id } }));
-  assert.deepEqual(unsub, { entity: "task", entity_id: task.id, unsubscribed: true });
+  assert.deepEqual(unsub, { ok: true, entity: "task", entity_id: task.id });
 });
 
 test("unsubscribe is not callable without the delete flag", { skip }, async () => {
@@ -679,7 +689,7 @@ test("saved filter create/list/update/delete round-trip", { skip }, async () => 
   assert.ok(Number.isInteger(created.id));
 
   const list = parse(await client.callTool({ name: "list_saved_filters", arguments: {} }));
-  assert.ok(list.filters.some((f) => f.id === created.id && f.title === title), "filter appears in list");
+  assert.ok(list.items.some((f) => f.id === created.id && f.title === title), "filter appears in list");
 
   const updated = parse(
     await wc.callTool({
@@ -691,9 +701,9 @@ test("saved filter create/list/update/delete round-trip", { skip }, async () => 
   assert.equal(updated.description, "made in e2e", "description preserved by fetch-merge");
 
   const del = parse(await wc.callTool({ name: "delete_saved_filter", arguments: { filter_id: created.id } }));
-  assert.deepEqual(del, { id: created.id, deleted: true });
+  assert.deepEqual(del, { ok: true, filter_id: created.id });
   const after = parse(await client.callTool({ name: "list_saved_filters", arguments: {} }));
-  assert.ok(!after.filters.some((f) => f.id === created.id), "filter removed");
+  assert.ok(!after.items.some((f) => f.id === created.id), "filter removed");
 });
 
 test("update_saved_filter is not callable without the write flag", { skip }, async () => {
@@ -703,13 +713,14 @@ test("update_saved_filter is not callable without the write flag", { skip }, asy
 });
 
 test("share_project_with_user surfaces a clean error for a nonexistent user", { skip }, async () => {
+  const wc = await getWriteClient();
   // The throwaway instance has only the owner, and Vikunja won't let a project
   // be shared with its own owner, so a positive round-trip is impossible here —
   // the request-body/permission coverage lives in the unit test. This asserts
   // the plumbing reaches Vikunja and errors cleanly. Don't "strengthen" it into
   // a success assertion; it will fail on a single-user instance.
   const project = parse(await client.callTool({ name: "create_project", arguments: { title: `e2e usershare ${process.hrtime.bigint()}` } }));
-  const result = await client.callTool({
+  const result = await wc.callTool({
     name: "share_project_with_user",
     arguments: { project_id: project.id, user_id: 999999, permission: 1 },
   });

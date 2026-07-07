@@ -48,6 +48,8 @@ import {
   webhookSummary,
   buildQuery,
   paginatedResult,
+  listResult,
+  okResult,
   taskDetail,
   projectDetail,
   savedFilterDetail,
@@ -75,7 +77,7 @@ const filterSortSchema = {
     description: 'Vikunja filter query, e.g. "done = false && priority >= 3".',
   },
   sort_by: { type: "string", description: "Field to sort by, e.g. due_date, priority." },
-  order_by: { type: "string", description: "Sort direction.", enum: ["asc", "desc"] },
+  order: { type: "string", description: "Sort direction (asc or desc).", enum: ["asc", "desc"] },
 };
 
 // Read + additive only. Add tools here deliberately; give each a `tier` so the
@@ -171,7 +173,7 @@ export function buildTools({ api }) {
       name: "list_tasks",
       tier: "read",
       description:
-        "List tasks in a project by project id (id, title, done). Optional filter/sort_by/order_by. Results are paginated; pass page/per_page and request successive pages while page < total_pages.",
+        "List tasks in a project by project id (id, title, done). Optional filter/sort_by/order. Results are paginated; pass page/per_page and request successive pages while page < total_pages.",
       inputSchema: {
         type: "object",
         properties: {
@@ -182,14 +184,14 @@ export function buildTools({ api }) {
         required: ["project_id"],
         additionalProperties: false,
       },
-      run: async ({ project_id, filter, sort_by, order_by, page, per_page }) => {
+      run: async ({ project_id, filter, sort_by, order, page, per_page }) => {
         const id = requireProjectId(project_id);
         const resolvedPage = optionalPage(page);
         const resolvedPerPage = optionalPerPage(per_page);
         const query = buildQuery({
           filter: optionalFilter(filter),
           sort_by: optionalSortBy(sort_by),
-          order_by: optionalOrder(order_by),
+          order_by: optionalOrder(order),
           page: resolvedPage,
           per_page: resolvedPerPage,
         });
@@ -202,19 +204,19 @@ export function buildTools({ api }) {
       name: "list_all_tasks",
       tier: "read",
       description:
-        "List tasks across all projects the token can see (id, title, done, project_id). Optional filter/sort_by/order_by. Paginated; request successive pages while page < total_pages.",
+        "List tasks across all projects the token can see (id, title, done, project_id). Optional filter/sort_by/order. Paginated; request successive pages while page < total_pages.",
       inputSchema: {
         type: "object",
         properties: { ...filterSortSchema, ...paginationSchema },
         additionalProperties: false,
       },
-      run: async ({ filter, sort_by, order_by, page, per_page } = {}) => {
+      run: async ({ filter, sort_by, order, page, per_page } = {}) => {
         const resolvedPage = optionalPage(page);
         const resolvedPerPage = optionalPerPage(per_page);
         const query = buildQuery({
           filter: optionalFilter(filter),
           sort_by: optionalSortBy(sort_by),
-          order_by: optionalOrder(order_by),
+          order_by: optionalOrder(order),
           page: resolvedPage,
           per_page: resolvedPerPage,
         });
@@ -278,7 +280,7 @@ export function buildTools({ api }) {
         if (!task || task.id == null) {
           throw new Error("Vikunja returned an empty task response");
         }
-        return { id: task.id, title: task.title };
+        return taskDetail(task);
       },
     },
     {
@@ -389,7 +391,7 @@ export function buildTools({ api }) {
         if (!project || project.id == null) {
           throw new Error("Vikunja returned an empty project response");
         }
-        return { id: project.id, title: project.title };
+        return projectDetail(project);
       },
     },
     {
@@ -454,7 +456,7 @@ export function buildTools({ api }) {
       run: async ({ project_id }) => {
         const id = requireProjectId(project_id);
         await api("DELETE", `/projects/${id}`);
-        return { id, deleted: true };
+        return okResult({ project_id: id });
       },
     },
     {
@@ -517,7 +519,7 @@ export function buildTools({ api }) {
         const tid = requireTaskId(task_id);
         const lid = requireLabelId(label_id);
         await api("PUT", `/tasks/${tid}/labels`, { label_id: lid });
-        return { task_id: tid, label_id: lid, added: true };
+        return okResult({ task_id: tid, label_id: lid });
       },
     },
     {
@@ -542,7 +544,7 @@ export function buildTools({ api }) {
         const tid = requireTaskId(task_id);
         const lid = requireLabelId(label_id);
         await api("DELETE", `/tasks/${tid}/labels/${lid}`);
-        return { task_id: tid, label_id: lid, removed: true };
+        return okResult({ task_id: tid, label_id: lid });
       },
     },
     {
@@ -559,7 +561,7 @@ export function buildTools({ api }) {
       run: async ({ query }) => {
         const q = requireQuery(query);
         const { data } = await api("GET", `/users${buildQuery({ s: q })}`);
-        return { users: (data ?? []).map(userSummary) };
+        return listResult((data ?? []).map(userSummary));
       },
     },
     {
@@ -580,7 +582,7 @@ export function buildTools({ api }) {
         if (!task || task.id == null) {
           throw new Error("Vikunja returned no task");
         }
-        return { task_id: tid, assignees: (task.assignees ?? []).map(userSummary) };
+        return listResult((task.assignees ?? []).map(userSummary), { task_id: tid });
       },
     },
     {
@@ -600,7 +602,7 @@ export function buildTools({ api }) {
         const tid = requireTaskId(task_id);
         const uid = requireUserId(user_id);
         await api("PUT", `/tasks/${tid}/assignees`, { user_id: uid });
-        return { task_id: tid, user_id: uid, assigned: true };
+        return okResult({ task_id: tid, user_id: uid });
       },
     },
     {
@@ -620,7 +622,7 @@ export function buildTools({ api }) {
         const tid = requireTaskId(task_id);
         const uid = requireUserId(user_id);
         await api("DELETE", `/tasks/${tid}/assignees/${uid}`);
-        return { task_id: tid, user_id: uid, unassigned: true };
+        return okResult({ task_id: tid, user_id: uid });
       },
     },
     {
@@ -687,7 +689,7 @@ export function buildTools({ api }) {
         const tid = requireTaskId(task_id);
         const cid = requireCommentId(comment_id);
         await api("DELETE", `/tasks/${tid}/comments/${cid}`);
-        return { task_id: tid, comment_id: cid, deleted: true };
+        return okResult({ task_id: tid, comment_id: cid });
       },
     },
     {
@@ -730,7 +732,7 @@ export function buildTools({ api }) {
         const otherId = requirePositiveIntId(other_task_id, "other_task_id");
         const kind = requireRelationKind(relation_kind);
         await api("PUT", `/tasks/${tid}/relations`, { other_task_id: otherId, relation_kind: kind });
-        return { task_id: tid, other_task_id: otherId, relation_kind: kind, created: true };
+        return okResult({ task_id: tid, other_task_id: otherId, relation_kind: kind });
       },
     },
     {
@@ -752,7 +754,7 @@ export function buildTools({ api }) {
         const otherId = requirePositiveIntId(other_task_id, "other_task_id");
         const kind = requireRelationKind(relation_kind);
         await api("DELETE", `/tasks/${tid}/relations/${kind}/${otherId}`);
-        return { task_id: tid, other_task_id: otherId, relation_kind: kind, deleted: true };
+        return okResult({ task_id: tid, other_task_id: otherId, relation_kind: kind });
       },
     },
     {
@@ -807,7 +809,7 @@ export function buildTools({ api }) {
         if (uploaded.length === 0 && data?.errors?.length) {
           throw new Error(`upload failed: ${JSON.stringify(data.errors).slice(0, 400)}`);
         }
-        return { task_id: tid, uploaded };
+        return listResult(uploaded, { task_id: tid });
       },
     },
     {
@@ -827,7 +829,7 @@ export function buildTools({ api }) {
         const tid = requireTaskId(task_id);
         const aid = requirePositiveIntId(attachment_id, "attachment_id");
         await api("DELETE", `/tasks/${tid}/attachments/${aid}`);
-        return { task_id: tid, attachment_id: aid, deleted: true };
+        return okResult({ task_id: tid, attachment_id: aid });
       },
     },
     {
@@ -845,7 +847,7 @@ export function buildTools({ api }) {
         const pid = requireProjectId(project_id);
         const viewId = await kanbanViewId(pid);
         const { data } = await api("GET", `/projects/${pid}/views/${viewId}/buckets`);
-        return { project_id: pid, view_id: viewId, buckets: (data ?? []).map(bucketSummary) };
+        return listResult((data ?? []).map(bucketSummary), { project_id: pid, view_id: viewId });
       },
     },
     {
@@ -871,7 +873,7 @@ export function buildTools({ api }) {
         if (!bucket || bucket.id == null) {
           throw new Error("Vikunja returned an empty bucket response");
         }
-        return { id: bucket.id, title: bucket.title, view_id: viewId };
+        return { ...bucketSummary(bucket), view_id: viewId };
       },
     },
     {
@@ -894,7 +896,7 @@ export function buildTools({ api }) {
         const tid = requireTaskId(task_id);
         const viewId = await kanbanViewId(pid);
         await api("POST", `/projects/${pid}/views/${viewId}/buckets/${bid}/tasks`, { task_id: tid });
-        return { project_id: pid, view_id: viewId, bucket_id: bid, task_id: tid, moved: true };
+        return okResult({ project_id: pid, view_id: viewId, bucket_id: bid, task_id: tid });
       },
     },
     {
@@ -933,7 +935,8 @@ export function buildTools({ api }) {
     },
     {
       name: "share_project_with_user",
-      tier: "additive",
+      // Write-gated: grants access to a third party — not additive.
+      tier: "write",
       description: "Share a project with a user at a permission level (default read).",
       inputSchema: {
         type: "object",
@@ -953,12 +956,13 @@ export function buildTools({ api }) {
         // so a silently-downgraded grant is visible — consistent across the
         // three share tools.
         const { data } = await api("PUT", `/projects/${pid}/users`, { user_id: uid, permission: perm });
-        return { project_id: pid, user_id: uid, permission: data?.permission ?? perm, shared: true };
+        return okResult({ project_id: pid, user_id: uid, permission: data?.permission ?? perm });
       },
     },
     {
       name: "share_project_with_team",
-      tier: "additive",
+      // Write-gated: grants access to a third party — not additive.
+      tier: "write",
       description: "Share a project with a team at a permission level (default read).",
       inputSchema: {
         type: "object",
@@ -975,12 +979,13 @@ export function buildTools({ api }) {
         const tmid = requirePositiveIntId(team_id, "team_id");
         const perm = optionalPermission(permission) ?? 0;
         const { data } = await api("PUT", `/projects/${pid}/teams`, { team_id: tmid, permission: perm });
-        return { project_id: pid, team_id: tmid, permission: data?.permission ?? perm, shared: true };
+        return okResult({ project_id: pid, team_id: tmid, permission: data?.permission ?? perm });
       },
     },
     {
       name: "create_link_share",
-      tier: "additive",
+      // Write-gated: mints a public capability URL — functionally a credential.
+      tier: "write",
       description:
         "Create a shareable link for a project at a permission level (default read). Returns the share hash — a capability secret that grants that access to anyone who has it, so treat it as sensitive.",
       inputSchema: {
@@ -1015,7 +1020,7 @@ export function buildTools({ api }) {
         const filters = (data ?? [])
           .filter((p) => p.id < 0)
           .map((p) => ({ id: -p.id - 1, title: p.title }));
-        return { filters };
+        return listResult(filters);
       },
     },
     {
@@ -1044,7 +1049,7 @@ export function buildTools({ api }) {
         if (!saved || saved.id == null) {
           throw new Error("Vikunja returned an empty saved filter response");
         }
-        return { id: saved.id, title: saved.title };
+        return savedFilterDetail(saved);
       },
     },
     {
@@ -1090,7 +1095,7 @@ export function buildTools({ api }) {
       run: async ({ filter_id }) => {
         const id = requirePositiveIntId(filter_id, "filter_id");
         await api("DELETE", `/filters/${id}`);
-        return { id, deleted: true };
+        return okResult({ filter_id: id });
       },
     },
     {
@@ -1128,7 +1133,7 @@ export function buildTools({ api }) {
         // swagger documents no body and the throwaway test instance generates no
         // notifications, so this path is unit-tested only, not exercised live.
         await api("POST", `/notifications/${id}`, { read: isRead });
-        return { notification_id: id, read: isRead, marked: true };
+        return okResult({ notification_id: id, read: isRead });
       },
     },
     {
@@ -1148,7 +1153,7 @@ export function buildTools({ api }) {
         const ent = requireEntity(entity);
         const eid = requirePositiveIntId(entity_id, "entity_id");
         await api("PUT", `/subscriptions/${ent}/${eid}`);
-        return { entity: ent, entity_id: eid, subscribed: true };
+        return okResult({ entity: ent, entity_id: eid });
       },
     },
     {
@@ -1168,7 +1173,7 @@ export function buildTools({ api }) {
         const ent = requireEntity(entity);
         const eid = requirePositiveIntId(entity_id, "entity_id");
         await api("DELETE", `/subscriptions/${ent}/${eid}`);
-        return { entity: ent, entity_id: eid, unsubscribed: true };
+        return okResult({ entity: ent, entity_id: eid });
       },
     },
     {
@@ -1260,10 +1265,8 @@ export function buildTools({ api }) {
     },
     {
       name: "create_webhook",
-      // additive, not write: the outbound POST is Vikunja's (no SSRF from here),
-      // and the webhook is enumerable via list_webhooks and reversible via
-      // delete_webhook — deletable data, not a minted credential like a token.
-      tier: "additive",
+      // Write-gated: exfiltrates task data to an attacker-chosen URL.
+      tier: "write",
       description:
         "Create a webhook on a project: POST events to a target URL. events is a non-empty array of event names (see Vikunja's GET /webhooks/events). Optional secret signs the payloads.",
       inputSchema: {
@@ -1317,7 +1320,7 @@ export function buildTools({ api }) {
         const pid = requireProjectId(project_id);
         const wid = requirePositiveIntId(webhook_id, "webhook_id");
         await api("DELETE", `/projects/${pid}/webhooks/${wid}`);
-        return { project_id: pid, webhook_id: wid, deleted: true };
+        return okResult({ project_id: pid, webhook_id: wid });
       },
     },
   ];
