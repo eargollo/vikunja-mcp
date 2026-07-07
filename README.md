@@ -1,5 +1,10 @@
 # vikunja-mcp
 
+[![npm](https://img.shields.io/npm/v/@eargollo/vikunja-mcp)](https://www.npmjs.com/package/@eargollo/vikunja-mcp)
+[![CI](https://github.com/eargollo/vikunja-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/eargollo/vikunja-mcp/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/@eargollo/vikunja-mcp)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/@eargollo/vikunja-mcp)](LICENSE)
+
 A minimal, self-owned [MCP](https://modelcontextprotocol.io/) server for
 [Vikunja](https://vikunja.io/), built to be small enough to read in one sitting.
 
@@ -23,6 +28,40 @@ This one is the opposite:
   task or read a list — not modify, share, bulk-replace assignees, or delete.
 - **Secrets from env**, never hardcoded.
 - **No build step** — plain Node ESM, `node index.js`.
+
+## Quickstart
+
+**Requirements:** Node ≥ 20 and a Vikunja instance (tested against Vikunja
+`2.3.0`, API v1). No build step, no Docker for normal use.
+
+Run it straight from npm:
+
+```bash
+VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
+VIKUNJA_API_TOKEN=tk_... \
+  npx @eargollo/vikunja-mcp
+```
+
+Or wire it into an MCP client's config:
+
+```json
+{
+  "mcpServers": {
+    "vikunja": {
+      "command": "npx",
+      "args": ["-y", "@eargollo/vikunja-mcp@latest"],
+      "env": {
+        "VIKUNJA_URL": "https://app.vikunja.cloud/api/v1",
+        "VIKUNJA_API_TOKEN": "tk_..."
+      }
+    }
+  }
+}
+```
+
+That exposes the read + additive tools. To turn on write or delete tools see
+[Config](#config); for running from source or an air-gapped gateway see
+[Running](#running).
 
 ## Tools
 
@@ -204,76 +243,55 @@ its posture via MCP `instructions` and per-tool `annotations` (`readOnlyHint`,
 
 `subscribe` / `unsubscribe` take `entity` (`project` or `task`) and `entity_id`.
 
-## Run it
+## Running
 
-Published to npm as [`@eargollo/vikunja-mcp`](https://www.npmjs.com/package/@eargollo/vikunja-mcp)
-(with build provenance). Run it straight from the registry:
+Two run modes, referenced by every integration below. Published to npm as
+[`@eargollo/vikunja-mcp`](https://www.npmjs.com/package/@eargollo/vikunja-mcp)
+(with build provenance).
+
+- **From npm (recommended)** — `npx @eargollo/vikunja-mcp` fetches the package
+  from the registry on each start; no clone, no `node_modules` to manage.
+  `@latest` tracks the newest release, or pin an exact version with
+  `@eargollo/vikunja-mcp@<version>`. Requires npm/network access.
+- **From source** — clone, `npm install` once (installs only the SDK), then
+  `node index.js`. No build step. The one rule: `node_modules` **must** sit next
+  to `index.js`, or the process exits on startup. This is the air-gapped path.
 
 ```bash
+# from npm
 VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
 VIKUNJA_API_TOKEN=tk_... \
   npx @eargollo/vikunja-mcp
-```
 
-Or clone and run from source (no build step):
-
-```bash
+# from source
 git clone https://github.com/eargollo/vikunja-mcp
-cd vikunja-mcp
-npm install          # installs only @modelcontextprotocol/sdk
+cd vikunja-mcp && npm install
 VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
 VIKUNJA_API_TOKEN=tk_... \
   node index.js
 ```
 
-## Register in Cursor / Claude Desktop
+### Register in Cursor / Claude Desktop
 
-Add to `.mcp.json` in your project (or global MCP config). Running from the
-registry with `npx` needs no clone and no local `node_modules`:
+Add the [Quickstart](#quickstart) `.mcp.json` block to your project (or your
+client's global MCP config); the npm form needs no clone. To run from source
+instead, use `"command": "node"` with `"args": ["/path/to/vikunja-mcp/index.js"]`
+— remember `node_modules` must sit next to `index.js` (see [Running](#running)).
 
-```json
-{
-  "mcpServers": {
-    "vikunja": {
-      "command": "npx",
-      "args": ["-y", "@eargollo/vikunja-mcp@latest"],
-      "env": {
-        "VIKUNJA_URL": "https://app.vikunja.cloud/api/v1",
-        "VIKUNJA_API_TOKEN": "tk_..."
-      }
-    }
-  }
-}
-```
+### Register in an MCP gateway (OpenClaw, etc.)
 
-Pin a version with `@eargollo/vikunja-mcp@<version>` if you'd rather not float on
-the latest. To run from a clone instead, use `"command": "node"` with
-`"args": ["/path/to/vikunja-mcp/index.js"]` — but `npm install` must have been
-run in that directory so `node_modules` sits next to `index.js`.
-
-## Register in an MCP gateway (OpenClaw, etc.)
-
-For a gateway that launches MCP servers as local processes, run the published
-package with `npx` — the gateway fetches it from the registry each time it
-starts the server, so there's no repo to clone and no `node_modules` to keep in
-sync next to `index.js`. The exact command depends on your gateway; the shape is:
+For a gateway that launches MCP servers as local processes, point it at either
+run mode. The exact CLI depends on your gateway; the shape is:
 
 ```bash
+# from npm (gateway fetches it on each start)
 <gateway-cli> mcp add vikunja \
   --command npx \
   --arg -y --arg @eargollo/vikunja-mcp@latest \
   --env VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
   --env VIKUNJA_API_TOKEN=tk_...
-```
 
-`@latest` tracks the newest release (pulled on server restart); pin an exact
-version with `@eargollo/vikunja-mcp@<version>`. Requires npm/network access.
-
-If the gateway is air-gapped, clone the repo into its persisted storage, run
-`npm install` there, and point at the file instead — but `node_modules` **must**
-live next to `index.js`, or the process exits on startup:
-
-```bash
+# from source (air-gapped: node_modules must sit next to index.js)
 <gateway-cli> mcp add vikunja \
   --command node \
   --arg /path/to/vikunja-mcp/index.js \
@@ -324,6 +342,12 @@ unit tests, publishes the package to npm via OIDC Trusted Publishing (no stored
 token, build provenance attached), and creates a GitHub Release with generated
 notes. The version is bumped only at release time (`npm version`), never in
 feature PRs. See [`docs/RELEASING.md`](docs/RELEASING.md).
+
+## Security
+
+The whole design goal here is a small, auditable trust surface (one egress point,
+opt-in write/delete, secrets from env). If you find a vulnerability, please report
+it privately — see [SECURITY.md](SECURITY.md) for the disclosure path.
 
 ## License
 

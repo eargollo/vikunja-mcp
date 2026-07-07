@@ -18,6 +18,16 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
   Trusted Publishing (not "GitHub-only"). README's release note mentions the npm
   publish + provenance step. Token-scope guidance in Config broadened beyond
   Projects + Tasks.
+- README now leads with a **Quickstart** (requirements + npx run + `.mcp.json`),
+  carries npm/CI/node/license badges, and consolidates the repeated npx-vs-source
+  and gateway instructions into one **Running** section.
+- Added `SECURITY.md` with a private vulnerability-disclosure path, linked from a
+  new README **Security** section.
+
+### Tests
+
+- Added a **README drift guard** (`test/docs.test.js`) that fails if the Tools
+  table and `buildTools()` disagree, so the table can't silently fall behind.
 
 ## 1.1.0 - 2026-07-07
 
