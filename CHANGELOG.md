@@ -5,6 +5,30 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Unreleased
 
+### Docs
+
+- README Tools table now lists **all** shipped tools (the team, CalDAV, bulk, and
+  update/delete tools added in 1.0.0 were missing) and is grouped by permission
+  tier.
+- Dropped the inaccurate "no transitive surface" claim: this project adds one
+  direct dependency, but the SDK has its own transitive deps (the stdio transport
+  never loads its HTTP/OAuth stack).
+- `docs/RELEASING.md` rewritten for the post-1.0, npm-published reality:
+  contract-breaking changes are a major bump, and distribution is npm via OIDC
+  Trusted Publishing (not "GitHub-only"). README's release note mentions the npm
+  publish + provenance step. Token-scope guidance in Config broadened beyond
+  Projects + Tasks.
+- README now leads with a **Quickstart** (requirements + npx run + `.mcp.json`),
+  carries npm/CI/node/license badges, and consolidates the repeated npx-vs-source
+  and gateway instructions into one **Running** section.
+- Added `SECURITY.md` with a private vulnerability-disclosure path, linked from a
+  new README **Security** section.
+
+### Tests
+
+- Added a **README drift guard** (`test/docs.test.js`) that fails if the Tools
+  table and `buildTools()` disagree, so the table can't silently fall behind.
+
 ## 1.1.0 - 2026-07-07
 
 ### Added

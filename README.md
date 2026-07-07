@@ -1,5 +1,10 @@
 # vikunja-mcp
 
+[![npm](https://img.shields.io/npm/v/@eargollo/vikunja-mcp)](https://www.npmjs.com/package/@eargollo/vikunja-mcp)
+[![CI](https://github.com/eargollo/vikunja-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/eargollo/vikunja-mcp/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/@eargollo/vikunja-mcp)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/@eargollo/vikunja-mcp)](LICENSE)
+
 A minimal, self-owned [MCP](https://modelcontextprotocol.io/) server for
 [Vikunja](https://vikunja.io/), built to be small enough to read in one sitting.
 
@@ -9,8 +14,10 @@ The available third-party Vikunja MCP servers pull a dozen-plus dependencies fro
 npm at runtime and run inside the agent's container with access to its secrets.
 This one is the opposite:
 
-- **One dependency** — the official `@modelcontextprotocol/sdk`. All HTTP uses
-  Node's built-in `fetch`. No API client libs, no transitive surface.
+- **One direct dependency** — the official `@modelcontextprotocol/sdk`. All HTTP
+  uses Node's built-in `fetch`; this project adds no API-client libs of its own.
+  The only transitive dependencies are the SDK's, and the stdio transport used
+  here never loads its HTTP/OAuth stack.
 - **One egress point** — every request goes through `makeApi()` in `api.js`
   that only ever calls `VIKUNJA_URL` with your token. Grep it; that's the whole
   network surface.
@@ -22,7 +29,44 @@ This one is the opposite:
 - **Secrets from env**, never hardcoded.
 - **No build step** — plain Node ESM, `node index.js`.
 
+## Quickstart
+
+**Requirements:** Node ≥ 20 and a Vikunja instance (tested against Vikunja
+`2.3.0`, API v1). No build step, no Docker for normal use.
+
+Run it straight from npm:
+
+```bash
+VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
+VIKUNJA_API_TOKEN=tk_... \
+  npx @eargollo/vikunja-mcp
+```
+
+Or wire it into an MCP client's config:
+
+```json
+{
+  "mcpServers": {
+    "vikunja": {
+      "command": "npx",
+      "args": ["-y", "@eargollo/vikunja-mcp@latest"],
+      "env": {
+        "VIKUNJA_URL": "https://app.vikunja.cloud/api/v1",
+        "VIKUNJA_API_TOKEN": "tk_..."
+      }
+    }
+  }
+}
+```
+
+That exposes the read + additive tools. To turn on write or delete tools see
+[Config](#config); for running from source or an air-gapped gateway see
+[Running](#running).
+
 ## Tools
+
+Grouped by permission tier (read + additive are always on; write and delete are
+opt-in — see [Config](#config)):
 
 | Tool | Effect | Endpoint |
 | --- | --- | --- |
@@ -39,11 +83,13 @@ This one is the opposite:
 | `list_task_attachments` | read | `GET /tasks/{id}/attachments` |
 | `list_buckets` | read | `GET /projects/{id}/views/{view}/buckets` |
 | `list_teams` | read | `GET /teams` |
+| `get_team` | read | `GET /teams/{id}` |
 | `list_saved_filters` | read | `GET /projects` (negative ids) |
 | `list_notifications` | read | `GET /notifications` |
 | `get_current_user` | read | `GET /user` |
 | `list_api_tokens` | read | `GET /tokens` |
 | `list_webhooks` | read | `GET /projects/{id}/webhooks` |
+| `get_caldav_info` | read | `GET /user` (+ CalDAV connection info) |
 | `create_project` | additive | `PUT /projects` |
 | `create_task` | additive | `PUT /projects/{id}/tasks` |
 | `add_label_to_task` | additive | `PUT /tasks/{id}/labels` |
@@ -52,32 +98,47 @@ This one is the opposite:
 | `create_task_relation` | additive | `PUT /tasks/{id}/relations` |
 | `upload_task_attachment` | additive | `PUT /tasks/{id}/attachments` |
 | `create_bucket` | additive | `PUT /projects/{id}/views/{view}/buckets` |
-| `update_task` | write | `POST /tasks/{id}` |
 | `create_team` | additive | `PUT /teams` |
+| `add_team_member` | additive | `PUT /teams/{id}/members` |
+| `create_label` | additive | `PUT /labels` |
+| `create_saved_filter` | additive | `PUT /filters` |
+| `subscribe` | additive | `PUT /subscriptions/{entity}/{id}` |
+| `update_task` | write | `POST /tasks/{id}` |
+| `set_task_done` | write | `POST /tasks/{id}` |
+| `bulk_update_tasks` | write | `POST /tasks/bulk` |
+| `set_task_labels` | write | `POST /tasks/{id}/labels/bulk` |
+| `set_task_assignees` | write | `POST /tasks/{id}/assignees/bulk` |
+| `update_project` | write | `POST /projects/{id}` |
+| `archive_project` | write | `POST /projects/{id}` |
+| `update_task_comment` | write | `POST /tasks/{id}/comments/{commentId}` |
+| `update_label` | write | `POST /labels/{id}` |
+| `update_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucketId}` |
+| `move_task_to_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucket_id}/tasks` |
+| `update_team` | write | `POST /teams/{id}` |
+| `toggle_team_member_admin` | write | `POST /teams/{id}/members/{userId}/admin` |
 | `share_project_with_user` | write | `PUT /projects/{id}/users` |
 | `share_project_with_team` | write | `PUT /projects/{id}/teams` |
 | `create_link_share` | write | `PUT /projects/{id}/shares` |
-| `create_saved_filter` | additive | `PUT /filters` |
-| `subscribe` | additive | `PUT /subscriptions/{entity}/{id}` |
 | `create_webhook` | write | `PUT /projects/{id}/webhooks` |
-| `move_task_to_bucket` | write | `POST /projects/{id}/views/{view}/buckets/{bucket_id}/tasks` |
+| `update_webhook` | write | `POST /projects/{id}/webhooks/{webhookId}` |
 | `update_saved_filter` | write | `POST /filters/{id}` |
 | `mark_notification_read` | write | `POST /notifications/{id}` |
 | `create_api_token` | write | `PUT /tokens` |
-| `set_task_done` | write | `POST /tasks/{id}` |
+| `create_caldav_token` | write | `PUT /user/settings/token/caldav` |
 | `delete_task` | delete | `DELETE /tasks/{id}` |
-| `update_project` | write | `POST /projects/{id}` |
-| `archive_project` | write | `POST /projects/{id}` |
-| `create_label` | additive | `PUT /labels` |
 | `delete_project` | delete | `DELETE /projects/{id}` |
 | `remove_label_from_task` | delete | `DELETE /tasks/{id}/labels/{labelId}` |
 | `unassign_user` | delete | `DELETE /tasks/{id}/assignees/{userId}` |
 | `delete_task_comment` | delete | `DELETE /tasks/{id}/comments/{commentId}` |
 | `delete_task_relation` | delete | `DELETE /tasks/{id}/relations/{kind}/{otherId}` |
 | `delete_task_attachment` | delete | `DELETE /tasks/{id}/attachments/{attachmentId}` |
+| `delete_label` | delete | `DELETE /labels/{id}` |
+| `delete_bucket` | delete | `DELETE /projects/{id}/views/{view}/buckets/{bucketId}` |
+| `remove_team_member` | delete | `DELETE /teams/{id}/members/{userId}` |
 | `delete_saved_filter` | delete | `DELETE /filters/{id}` |
 | `unsubscribe` | delete | `DELETE /subscriptions/{entity}/{id}` |
 | `delete_webhook` | delete | `DELETE /projects/{id}/webhooks/{webhookId}` |
+| `delete_caldav_token` | delete | `DELETE /user/settings/token/caldav/{id}` |
 
 `list_projects`, `list_tasks`, and `list_all_tasks` support optional `page` and
 `per_page`. Responses include `{ page, total_pages, count, items }`; paginate by
@@ -129,48 +190,30 @@ Inputs use `*_id`; list/detail outputs use `id`.
 
 Invalid input (bad `project_id`, empty `title`, unknown tool) comes back as an MCP tool error (`isError: true`) with a message, never a crash.
 
-## API coverage
+## Scope & gaps
 
-The goal is to cover the **most common** Vikunja v1 operations agents need,
-added TDD-style (unit + e2e). This is not a complete mirror of every endpoint
-(CalDAV sync itself uses `/dav`, not these tools). To keep the
-[trust posture](#why-this-exists), tools are tiered: **read** and **additive**
-are always on; **write** (update, sharing, egress, credential minting, bulk
-replace) tools require `VIKUNJA_MCP_ALLOW_WRITE=1` and **delete** tools require
-`VIKUNJA_MCP_ALLOW_DELETE=1`, so a default install can never modify or destroy
-data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
+The goal is the **most common** Vikunja v1 operations agents need, added TDD-style
+(unit + e2e) — not a complete mirror of every endpoint. The [Tools](#tools) table
+above is the authoritative, per-tool coverage list; by area that spans Projects ·
+Tasks (detail, filter/sort, bulk) · Labels · Assignees · Task comments · Task
+relations · Attachments (base64) · Kanban buckets · Teams & members · Project
+sharing (user/team/link) · Saved filters · Subscriptions & notifications · Current
+user, API tokens & CalDAV · Webhooks.
 
-| Area | Status |
-| --- | --- |
-| Projects — list, get, create, update, archive, delete | ✅ shipped |
-| Tasks — list, get, create, update, delete, bulk update | ✅ shipped |
-| Task detail & filtering (`get_task`, `list_all_tasks`, filter/sort) | ✅ shipped |
-| Rich task create & update (`update_task`, `set_task_done`, create fields) | ✅ shipped |
-| Labels — list/create/update/delete; add/remove on tasks; bulk replace on task | ✅ shipped |
-| Assignees (`search_users`, list/assign/unassign; bulk replace on task) | ✅ shipped |
-| Task comments (list/add/update/delete) | ✅ shipped |
-| Task relations (list/create/delete) | ✅ shipped |
-| Attachments (list/upload/delete, base64 upload) | ✅ shipped |
-| Kanban buckets (list/create/update/delete, move task) | ✅ shipped |
-| Teams — list/create/get/update; members add/remove/admin toggle | ✅ shipped |
-| Project sharing (user/team/link shares) | ✅ shipped |
-| Saved filters (list/create/update/delete) | ✅ shipped |
-| Subscriptions & notifications (list/mark-read, subscribe/unsubscribe) | ✅ shipped |
-| Current user, API tokens, CalDAV tokens & connection info | ✅ shipped |
-| Webhooks (list/create/update/delete) | ✅ shipped |
+**Intentional gaps:** no CalDAV sync itself (that uses `/dav`, not these tools), no
+arbitrary `/routes` proxy, no admin endpoints, and no user-level webhooks (project
+webhooks only). Tool results carry MCP `structuredContent`, but no declared
+`outputSchema` yet.
 
-Partial / intentional gaps: no arbitrary `/routes` proxy, no admin endpoints, no
-user-level webhooks, no `outputSchema` on tool results (JSON text is enough for
-now). See [CHANGELOG.md](CHANGELOG.md) for recent additions.
-
-Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
+See [CHANGELOG.md](CHANGELOG.md) for recent additions and
+[#21](https://github.com/eargollo/vikunja-mcp/issues/21) for the roadmap.
 
 ## Config
 
 | Env var | Example |
 | --- | --- |
 | `VIKUNJA_URL` | `https://app.vikunja.cloud/api/v1` (note the `/api/v1`) |
-| `VIKUNJA_API_TOKEN` | `tk_...` (a Vikunja API token, scoped to Projects + Tasks) |
+| `VIKUNJA_API_TOKEN` | `tk_...` (a Vikunja API token; scope it to the areas whose tools you enable — Projects + Tasks covers the default read/additive set, but Teams, Labels, Webhooks, Filters, Subscriptions, Tokens and CalDAV each need their own scope) |
 | `VIKUNJA_MCP_ALLOW_WRITE` | `1` to also expose **write** tools (updates, sharing, webhooks, API tokens) — off by default |
 | `VIKUNJA_MCP_ALLOW_DELETE` | `1` to also expose **delete** (destructive) tools — off by default |
 
@@ -182,76 +225,55 @@ its posture via MCP `instructions` and per-tool `annotations` (`readOnlyHint`,
 
 `subscribe` / `unsubscribe` take `entity` (`project` or `task`) and `entity_id`.
 
-## Run it
+## Running
 
-Published to npm as [`@eargollo/vikunja-mcp`](https://www.npmjs.com/package/@eargollo/vikunja-mcp)
-(with build provenance). Run it straight from the registry:
+Two run modes, referenced by every integration below. Published to npm as
+[`@eargollo/vikunja-mcp`](https://www.npmjs.com/package/@eargollo/vikunja-mcp)
+(with build provenance).
+
+- **From npm (recommended)** — `npx @eargollo/vikunja-mcp` fetches the package
+  from the registry on each start; no clone, no `node_modules` to manage.
+  `@latest` tracks the newest release, or pin an exact version with
+  `@eargollo/vikunja-mcp@<version>`. Requires npm/network access.
+- **From source** — clone, `npm install` once (installs only the SDK), then
+  `node index.js`. No build step. The one rule: `node_modules` **must** sit next
+  to `index.js`, or the process exits on startup. This is the air-gapped path.
 
 ```bash
+# from npm
 VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
 VIKUNJA_API_TOKEN=tk_... \
   npx @eargollo/vikunja-mcp
-```
 
-Or clone and run from source (no build step):
-
-```bash
+# from source
 git clone https://github.com/eargollo/vikunja-mcp
-cd vikunja-mcp
-npm install          # installs only @modelcontextprotocol/sdk
+cd vikunja-mcp && npm install
 VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
 VIKUNJA_API_TOKEN=tk_... \
   node index.js
 ```
 
-## Register in Cursor / Claude Desktop
+### Register in Cursor / Claude Desktop
 
-Add to `.mcp.json` in your project (or global MCP config). Running from the
-registry with `npx` needs no clone and no local `node_modules`:
+Add the [Quickstart](#quickstart) `.mcp.json` block to your project (or your
+client's global MCP config); the npm form needs no clone. To run from source
+instead, use `"command": "node"` with `"args": ["/path/to/vikunja-mcp/index.js"]`
+— remember `node_modules` must sit next to `index.js` (see [Running](#running)).
 
-```json
-{
-  "mcpServers": {
-    "vikunja": {
-      "command": "npx",
-      "args": ["-y", "@eargollo/vikunja-mcp@latest"],
-      "env": {
-        "VIKUNJA_URL": "https://app.vikunja.cloud/api/v1",
-        "VIKUNJA_API_TOKEN": "tk_..."
-      }
-    }
-  }
-}
-```
+### Register in an MCP gateway (OpenClaw, etc.)
 
-Pin a version with `@eargollo/vikunja-mcp@<version>` if you'd rather not float on
-the latest. To run from a clone instead, use `"command": "node"` with
-`"args": ["/path/to/vikunja-mcp/index.js"]` — but `npm install` must have been
-run in that directory so `node_modules` sits next to `index.js`.
-
-## Register in an MCP gateway (OpenClaw, etc.)
-
-For a gateway that launches MCP servers as local processes, run the published
-package with `npx` — the gateway fetches it from the registry each time it
-starts the server, so there's no repo to clone and no `node_modules` to keep in
-sync next to `index.js`. The exact command depends on your gateway; the shape is:
+For a gateway that launches MCP servers as local processes, point it at either
+run mode. The exact CLI depends on your gateway; the shape is:
 
 ```bash
+# from npm (gateway fetches it on each start)
 <gateway-cli> mcp add vikunja \
   --command npx \
   --arg -y --arg @eargollo/vikunja-mcp@latest \
   --env VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
   --env VIKUNJA_API_TOKEN=tk_...
-```
 
-`@latest` tracks the newest release (pulled on server restart); pin an exact
-version with `@eargollo/vikunja-mcp@<version>`. Requires npm/network access.
-
-If the gateway is air-gapped, clone the repo into its persisted storage, run
-`npm install` there, and point at the file instead — but `node_modules` **must**
-live next to `index.js`, or the process exits on startup:
-
-```bash
+# from source (air-gapped: node_modules must sit next to index.js)
 <gateway-cli> mcp add vikunja \
   --command node \
   --arg /path/to/vikunja-mcp/index.js \
@@ -298,9 +320,16 @@ Notes:
 
 Releases are cut from `v*` git tags via
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which runs the
-unit tests and publishes a GitHub Release with generated notes. The version is
-bumped only at release time (`npm version`), never in feature PRs. See
-[`docs/RELEASING.md`](docs/RELEASING.md).
+unit tests, publishes the package to npm via OIDC Trusted Publishing (no stored
+token, build provenance attached), and creates a GitHub Release with generated
+notes. The version is bumped only at release time (`npm version`), never in
+feature PRs. See [`docs/RELEASING.md`](docs/RELEASING.md).
+
+## Security
+
+The whole design goal here is a small, auditable trust surface (one egress point,
+opt-in write/delete, secrets from env). If you find a vulnerability, please report
+it privately — see [SECURITY.md](SECURITY.md) for the disclosure path.
 
 ## License
 

@@ -2,8 +2,10 @@
 // Minimal, self-owned MCP server for Vikunja.
 //
 // Trust posture (the whole point of this repo):
-//   - ONE dependency: the official @modelcontextprotocol/sdk. HTTP is Node's
-//     built-in fetch — no axios, no client libs, no transitive surface.
+//   - ONE direct dependency: the official @modelcontextprotocol/sdk. HTTP is
+//     Node's built-in fetch — no axios, no client libs of our own. The only
+//     transitive deps are the SDK's, and the stdio transport never loads its
+//     HTTP/OAuth stack.
 //   - Every outbound request goes through makeApi() in api.js, so there is
 //     exactly one place that can talk to the network, and it only ever talks to
 //     VIKUNJA_URL with your token.
