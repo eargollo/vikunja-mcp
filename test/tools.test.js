@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { buildTools } from "../tools.js";
-import { tierAllowed } from "../lib.js";
+import { tierAllowed, toolDisplayTitle } from "../lib.js";
 
 const TEST_BASE = "http://vikunja.test/api/v1";
 const KNOWN_TIERS = new Set(["read", "additive", "write", "delete"]);
@@ -22,6 +22,20 @@ test("every tool declares a name, description, inputSchema, and known tier", () 
     assert.ok(KNOWN_TIERS.has(t.tier), `${t.name} has tier "${t.tier}"`);
     assert.equal(typeof t.run, "function");
   }
+});
+
+test("toolDisplayTitle yields a clean Title Case name for every shipped tool", () => {
+  for (const t of buildTools({ api: noop, base: TEST_BASE })) {
+    const title = toolDisplayTitle(t.name);
+    assert.ok(title.length > 0, `${t.name} should get a non-empty title`);
+    assert.ok(/^[A-Z]/.test(title), `${t.name} title should start upper-cased`);
+    assert.ok(!/ {2,}|^ | $/.test(title), `${t.name} title should have no doubled/edge spaces`);
+  }
+});
+
+test("integer-typed id and value schema fields never use type:number", () => {
+  const seen = JSON.stringify(buildTools({ api: noop, base: TEST_BASE }).map((t) => t.inputSchema));
+  assert.ok(!seen.includes('"type":"number"'), "no schema property should be typed 'number'");
 });
 
 test("each tool has the expected tier", () => {
@@ -1295,6 +1309,19 @@ test("bulk_update_tasks POSTs task_ids and changed fields to /tasks/bulk", async
   });
   assert.deepEqual(res, { ok: true, task_ids: [1, 2] });
   assert.deepEqual(posted[0][2], { task_ids: [1, 2], done: true });
+});
+
+test("bulk_update_tasks rejects task_ids with no updatable field, before the api call", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api, base: TEST_BASE }), "bulk_update_tasks").run({ task_ids: [1, 2] }),
+    /no fields to update/,
+  );
+  assert.equal(called, false, "must not POST a no-op bulk update");
 });
 
 test("get_caldav_info returns dav URLs and token metadata", async () => {

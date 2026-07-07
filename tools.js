@@ -277,7 +277,7 @@ export function buildTools({ api, base }) {
             type: "string",
             description: "Due date/time, ISO 8601 required (e.g. 2026-08-01T09:00:00Z)",
           },
-          priority: { type: "number", description: "Priority 0-5 (0 = unset, 5 = DO NOW)" },
+          priority: { type: "integer", description: "Priority 0-5 (0 = unset, 5 = DO NOW)" },
         },
         required: ["project_id", "title"],
         additionalProperties: false,
@@ -311,7 +311,7 @@ export function buildTools({ api, base }) {
           description: { type: "string", description: "New description" },
           done: { type: "boolean", description: "Mark done/undone" },
           due_date: { type: "string", description: "Due date/time, ISO 8601 required" },
-          priority: { type: "number", description: "Priority 0-5" },
+          priority: { type: "integer", description: "Priority 0-5" },
         },
         required: ["task_id"],
         additionalProperties: false,
@@ -1690,27 +1690,29 @@ export function buildTools({ api, base }) {
           description: { type: "string", description: "New description" },
           done: { type: "boolean", description: "Mark done/undone" },
           due_date: { type: "string", description: "Due date/time, ISO 8601 required" },
-          priority: { type: "number", description: "Priority 0-5" },
+          priority: { type: "integer", description: "Priority 0-5" },
         },
         required: ["task_ids"],
         additionalProperties: false,
       },
       run: async ({ task_ids, title, description, done, due_date, priority }) => {
         const ids = requirePositiveIntIdArray(task_ids, "task_ids");
-        const body = { task_ids: ids };
-        if (title !== undefined) body.title = requireTitle(title);
+        // Collect the changed fields separately so the guard can't be defeated
+        // by a positional assumption about what else lives in the body.
+        const fields = {};
+        if (title !== undefined) fields.title = requireTitle(title);
         const desc = optionalDescription(description);
-        if (desc !== undefined) body.description = desc;
+        if (desc !== undefined) fields.description = desc;
         const doneVal = optionalBoolean(done, "done");
-        if (doneVal !== undefined) body.done = doneVal;
+        if (doneVal !== undefined) fields.done = doneVal;
         const due = optionalDueDate(due_date);
-        if (due !== undefined) body.due_date = due;
+        if (due !== undefined) fields.due_date = due;
         const prio = optionalPriority(priority);
-        if (prio !== undefined) body.priority = prio;
-        if (Object.keys(body).length === 1) {
+        if (prio !== undefined) fields.priority = prio;
+        if (Object.keys(fields).length === 0) {
           throw new Error("bulk_update_tasks: no fields to update");
         }
-        await api("POST", "/tasks/bulk", body);
+        await api("POST", "/tasks/bulk", { task_ids: ids, ...fields });
         return okResult({ task_ids: ids });
       },
     },
