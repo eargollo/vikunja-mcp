@@ -8,6 +8,7 @@
 import {
   requireProjectId,
   requireTaskId,
+  requirePositiveIntId,
   requireLabelId,
   requireUserId,
   requireCommentId,
@@ -17,6 +18,9 @@ import {
   optionalHexColor,
   userSummary,
   commentSummary,
+  RELATION_KINDS,
+  requireRelationKind,
+  relationsShape,
   optionalPage,
   optionalPerPage,
   optionalFilter,
@@ -626,6 +630,71 @@ export function buildTools({ api }) {
         const cid = requireCommentId(comment_id);
         await api("DELETE", `/tasks/${tid}/comments/${cid}`);
         return { task_id: tid, comment_id: cid, deleted: true };
+      },
+    },
+    {
+      name: "list_task_relations",
+      tier: "read",
+      description:
+        "List a task's relations, grouped by kind (subtask, blocking, related, ...) → tasks {id, title, done}.",
+      inputSchema: {
+        type: "object",
+        properties: { task_id: { type: "number", description: "Vikunja task id" } },
+        required: ["task_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id }) => {
+        const tid = requireTaskId(task_id);
+        const { data: task } = await api("GET", `/tasks/${tid}`);
+        if (!task || task.id == null) {
+          throw new Error("Vikunja returned no task");
+        }
+        return { task_id: tid, relations: relationsShape(task.related_tasks) };
+      },
+    },
+    {
+      name: "create_task_relation",
+      tier: "additive",
+      description:
+        "Relate a task to another task. relation_kind is the relation from task_id's perspective (e.g. blocking, subtask, related).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          other_task_id: { type: "number", description: "The other task's id" },
+          relation_kind: { type: "string", description: "Relation kind", enum: RELATION_KINDS },
+        },
+        required: ["task_id", "other_task_id", "relation_kind"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, other_task_id, relation_kind }) => {
+        const tid = requireTaskId(task_id);
+        const otherId = requirePositiveIntId(other_task_id, "other_task_id");
+        const kind = requireRelationKind(relation_kind);
+        await api("PUT", `/tasks/${tid}/relations`, { other_task_id: otherId, relation_kind: kind });
+        return { task_id: tid, other_task_id: otherId, relation_kind: kind, created: true };
+      },
+    },
+    {
+      name: "delete_task_relation",
+      tier: "delete",
+      description: "Remove a relation between two tasks.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          other_task_id: { type: "number", description: "The other task's id" },
+          relation_kind: { type: "string", description: "Relation kind", enum: RELATION_KINDS },
+        },
+        required: ["task_id", "other_task_id", "relation_kind"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, other_task_id, relation_kind }) => {
+        const tid = requireTaskId(task_id);
+        const otherId = requirePositiveIntId(other_task_id, "other_task_id");
+        const kind = requireRelationKind(relation_kind);
+        await api("DELETE", `/tasks/${tid}/relations/${kind}/${otherId}`);
+        return { task_id: tid, other_task_id: otherId, relation_kind: kind, deleted: true };
       },
     },
   ];

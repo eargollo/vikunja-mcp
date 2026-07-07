@@ -33,6 +33,10 @@ import {
   requireCommentId,
   requireComment,
   commentSummary,
+  RELATION_KINDS,
+  requireRelationKind,
+  relationsShape,
+  requirePositiveIntId,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -49,6 +53,12 @@ test("requireAbsoluteUrl rejects unparseable and non-http URLs", () => {
   assert.throws(() => requireAbsoluteUrl("host:3456/api/v1", "VIKUNJA_URL"), /http or https/);
   assert.throws(() => requireAbsoluteUrl("ftp://host/api", "VIKUNJA_URL"), /http or https/);
   assert.throws(() => requireAbsoluteUrl("file:///etc/passwd", "VIKUNJA_URL"), /http or https/);
+});
+
+test("requirePositiveIntId names the field in its error", () => {
+  assert.equal(requirePositiveIntId("5", "other_task_id"), 5);
+  assert.throws(() => requirePositiveIntId(-1, "other_task_id"), /other_task_id must be a positive integer/);
+  assert.throws(() => requirePositiveIntId("x", "webhook_id"), /webhook_id must be a positive integer/);
 });
 
 test("requireProjectId accepts positive integers, coerces numeric strings", () => {
@@ -363,6 +373,31 @@ test("requireComment trims and requires non-empty text", () => {
   for (const bad of ["", "   ", 5, null, undefined]) {
     assert.throws(() => requireComment(bad), /comment must not be empty/, `reject ${String(bad)}`);
   }
+});
+
+test("requireRelationKind accepts known kinds, rejects the rest", () => {
+  for (const k of ["related", "subtask", "blocking", "duplicateof"]) {
+    assert.equal(requireRelationKind(k), k);
+  }
+  assert.ok(RELATION_KINDS.includes("related"));
+  for (const bad of ["friend", "", "RELATED", 5, null, undefined]) {
+    assert.throws(() => requireRelationKind(bad), /relation_kind must be one of/, `reject ${String(bad)}`);
+  }
+});
+
+test("relationsShape maps each kind's tasks to id/title/done, tolerates null", () => {
+  assert.deepEqual(
+    relationsShape({
+      related: [{ id: 2, title: "B", done: false, description: "drop" }],
+      blocking: [{ id: 3, title: "C", done: true }],
+    }),
+    {
+      related: [{ id: 2, title: "B", done: false }],
+      blocking: [{ id: 3, title: "C", done: true }],
+    },
+  );
+  assert.deepEqual(relationsShape(null), {});
+  assert.deepEqual(relationsShape({ related: null }), { related: [] });
 });
 
 test("commentSummary curates id/comment/author/created", () => {
