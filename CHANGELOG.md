@@ -5,6 +5,8 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Unreleased
 
+## 1.0.1 - 2026-07-07
+
 ### Fixed / hardened
 
 - `list_saved_filters` now pages through the entire projects list (saved filters
