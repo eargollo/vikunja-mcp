@@ -42,7 +42,69 @@ test("each tool has the expected tier", () => {
     create_label: "additive",
     add_label_to_task: "additive",
     remove_label_from_task: "delete",
+    search_users: "read",
+    list_task_assignees: "read",
+    assign_user: "additive",
+    unassign_user: "delete",
   });
+});
+
+test("search_users hits /users?s= and maps id/username/name; null → []", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/users?s=mc");
+    return { data: [{ id: 1, username: "mctester", name: "MC", extra: "drop" }], headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "search_users").run({ query: " mc " });
+  assert.deepEqual(res, { users: [{ id: 1, username: "mctester", name: "MC" }] });
+
+  const apiNull = async () => ({ data: null, headers: headers() });
+  const empty = await byName(buildTools({ api: apiNull }), "search_users").run({ query: "zzz" });
+  assert.deepEqual(empty, { users: [] });
+});
+
+test("search_users rejects an empty query before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: [], headers: headers() };
+  };
+  await assert.rejects(() => byName(buildTools({ api }), "search_users").run({ query: "  " }), /query/);
+  assert.equal(called, false);
+});
+
+test("list_task_assignees derives assignees from GET /tasks/{id} (the list endpoint is broken)", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/tasks/7");
+    return {
+      data: { id: 7, assignees: [{ id: 1, username: "me", name: "" }] },
+      headers: headers(),
+    };
+  };
+  const res = await byName(buildTools({ api }), "list_task_assignees").run({ task_id: 7 });
+  assert.deepEqual(res, { task_id: 7, assignees: [{ id: 1, username: "me", name: "" }] });
+});
+
+test("assign_user PUTs { user_id } and confirms", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/tasks/7/assignees");
+    assert.deepEqual(body, { user_id: 3 });
+    return { data: { user_id: 3 }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "assign_user").run({ task_id: 7, user_id: 3 });
+  assert.deepEqual(res, { task_id: 7, user_id: 3, assigned: true });
+});
+
+test("unassign_user DELETEs /tasks/{id}/assignees/{userId} and confirms", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/tasks/7/assignees/3");
+    return { data: { message: "ok" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "unassign_user").run({ task_id: 7, user_id: 3 });
+  assert.deepEqual(res, { task_id: 7, user_id: 3, unassigned: true });
 });
 
 test("list_labels maps id/title/hex_color into the paginated envelope", async () => {

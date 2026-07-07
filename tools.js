@@ -9,8 +9,11 @@ import {
   requireProjectId,
   requireTaskId,
   requireLabelId,
+  requireUserId,
   requireTitle,
+  requireQuery,
   optionalHexColor,
+  userSummary,
   optionalPage,
   optionalPerPage,
   optionalFilter,
@@ -475,6 +478,84 @@ export function buildTools({ api }) {
         const lid = requireLabelId(label_id);
         await api("DELETE", `/tasks/${tid}/labels/${lid}`);
         return { task_id: tid, label_id: lid, removed: true };
+      },
+    },
+    {
+      name: "search_users",
+      tier: "read",
+      description:
+        "Search users by a query string (id, username, name), e.g. to find someone to assign. Excludes yourself; may return an empty list.",
+      inputSchema: {
+        type: "object",
+        properties: { query: { type: "string", description: "Search text (username or name)" } },
+        required: ["query"],
+        additionalProperties: false,
+      },
+      run: async ({ query }) => {
+        const q = requireQuery(query);
+        const { data } = await api("GET", `/users${buildQuery({ s: q })}`);
+        return { users: (data ?? []).map(userSummary) };
+      },
+    },
+    {
+      name: "list_task_assignees",
+      tier: "read",
+      description: "List the users assigned to a task (id, username, name).",
+      inputSchema: {
+        type: "object",
+        properties: { task_id: { type: "number", description: "Vikunja task id" } },
+        required: ["task_id"],
+        additionalProperties: false,
+      },
+      // Vikunja v2.3.0's GET /tasks/{id}/assignees returns 500, so read the
+      // assignees off the task object instead.
+      run: async ({ task_id }) => {
+        const tid = requireTaskId(task_id);
+        const { data: task } = await api("GET", `/tasks/${tid}`);
+        if (!task || task.id == null) {
+          throw new Error("Vikunja returned no task");
+        }
+        return { task_id: tid, assignees: (task.assignees ?? []).map(userSummary) };
+      },
+    },
+    {
+      name: "assign_user",
+      tier: "additive",
+      description: "Assign a user to a task.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          user_id: { type: "number", description: "Vikunja user id (see search_users)" },
+        },
+        required: ["task_id", "user_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, user_id }) => {
+        const tid = requireTaskId(task_id);
+        const uid = requireUserId(user_id);
+        await api("PUT", `/tasks/${tid}/assignees`, { user_id: uid });
+        return { task_id: tid, user_id: uid, assigned: true };
+      },
+    },
+    {
+      name: "unassign_user",
+      tier: "delete",
+      description: "Remove a user's assignment from a task.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "number", description: "Vikunja task id" },
+          user_id: { type: "number", description: "Vikunja user id" },
+        },
+        required: ["task_id", "user_id"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, user_id }) => {
+        const tid = requireTaskId(task_id);
+        const uid = requireUserId(user_id);
+        await api("DELETE", `/tasks/${tid}/assignees/${uid}`);
+        return { task_id: tid, user_id: uid, unassigned: true };
       },
     },
   ];

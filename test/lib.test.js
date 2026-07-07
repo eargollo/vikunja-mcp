@@ -27,6 +27,9 @@ import {
   projectDetail,
   requireLabelId,
   optionalHexColor,
+  requireUserId,
+  userSummary,
+  requireQuery,
 } from "../lib.js";
 
 test("requireAbsoluteUrl accepts http/https and strips trailing slashes", () => {
@@ -316,6 +319,30 @@ test("optionalHexColor normalizes to 6 lowercase hex digits, strips '#', rejects
   assert.equal(optionalHexColor("AbCdEf"), "abcdef");
   for (const bad of ["abc", "gggggg", "#12345", "1234567", 123]) {
     assert.throws(() => optionalHexColor(bad), /hex_color/, `reject ${String(bad)}`);
+  }
+});
+
+test("requireUserId accepts positive integers, rejects the rest", () => {
+  assert.equal(requireUserId(1), 1);
+  assert.equal(requireUserId("42"), 42);
+  for (const bad of [0, -1, 1.5, "x", null, undefined]) {
+    assert.throws(() => requireUserId(bad), /user_id must be a positive integer/, `reject ${String(bad)}`);
+  }
+});
+
+test("userSummary curates id/username/name and defaults name to ''", () => {
+  assert.deepEqual(userSummary({ id: 1, username: "me", name: "Me", email: "x", secret: "drop" }), {
+    id: 1,
+    username: "me",
+    name: "Me",
+  });
+  assert.deepEqual(userSummary({ id: 2, username: "u" }), { id: 2, username: "u", name: "" });
+});
+
+test("requireQuery trims and requires a non-empty string", () => {
+  assert.equal(requireQuery("  hi  "), "hi");
+  for (const bad of ["", "   ", 5, null, undefined]) {
+    assert.throws(() => requireQuery(bad), /query must not be empty/, `reject ${String(bad)}`);
   }
 });
 
