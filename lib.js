@@ -16,36 +16,30 @@ export function requireAbsoluteUrl(value, name) {
   return url.toString().replace(/\/+$/, "");
 }
 
-export function requireProjectId(value) {
+// Coerce and validate a positive-integer id, naming the field in the error so
+// tools with more than one id (e.g. task_id + other_task_id) report the right one.
+export function requirePositiveIntId(value, name) {
   const id = Number(value);
   if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("project_id must be a positive integer");
+    throw new Error(`${name} must be a positive integer`);
   }
   return id;
+}
+
+export function requireProjectId(value) {
+  return requirePositiveIntId(value, "project_id");
 }
 
 export function requireTaskId(value) {
-  const id = Number(value);
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("task_id must be a positive integer");
-  }
-  return id;
+  return requirePositiveIntId(value, "task_id");
 }
 
 export function requireLabelId(value) {
-  const id = Number(value);
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("label_id must be a positive integer");
-  }
-  return id;
+  return requirePositiveIntId(value, "label_id");
 }
 
 export function requireUserId(value) {
-  const id = Number(value);
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("user_id must be a positive integer");
-  }
-  return id;
+  return requirePositiveIntId(value, "user_id");
 }
 
 export function userSummary(u) {
@@ -60,11 +54,7 @@ export function requireQuery(value) {
 }
 
 export function requireCommentId(value) {
-  const id = Number(value);
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("comment_id must be a positive integer");
-  }
-  return id;
+  return requirePositiveIntId(value, "comment_id");
 }
 
 export function requireComment(value) {
@@ -81,6 +71,38 @@ export function commentSummary(c) {
     author: c.author?.username ?? null,
     created: c.created ?? null,
   };
+}
+
+// Vikunja's task relation kinds (excluding the internal "unknown").
+export const RELATION_KINDS = [
+  "subtask",
+  "parenttask",
+  "related",
+  "duplicateof",
+  "duplicates",
+  "blocking",
+  "blocked",
+  "precedes",
+  "follows",
+  "copiedfrom",
+  "copiedto",
+];
+
+export function requireRelationKind(value) {
+  if (typeof value !== "string" || !RELATION_KINDS.includes(value)) {
+    throw new Error(`relation_kind must be one of: ${RELATION_KINDS.join(", ")}`);
+  }
+  return value;
+}
+
+// A task's related_tasks is an object keyed by relation kind → array of tasks.
+// Shape each into a compact {id, title, done}.
+export function relationsShape(related) {
+  const out = {};
+  for (const [kind, tasks] of Object.entries(related ?? {})) {
+    out[kind] = (tasks ?? []).map((t) => ({ id: t.id, title: t.title, done: t.done }));
+  }
+  return out;
 }
 
 export function optionalHexColor(value) {

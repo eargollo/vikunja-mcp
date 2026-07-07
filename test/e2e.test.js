@@ -77,6 +77,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "create_label",
     "create_project",
     "create_task",
+    "create_task_relation",
     "get_project",
     "get_task",
     "list_all_tasks",
@@ -84,6 +85,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "list_projects",
     "list_task_assignees",
     "list_task_comments",
+    "list_task_relations",
     "list_tasks",
     "search_users",
   ]);
@@ -96,6 +98,7 @@ test("exposes exactly the read + additive tool set by default", { skip }, async 
     "remove_label_from_task",
     "unassign_user",
     "delete_task_comment",
+    "delete_task_relation",
   ]) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
@@ -408,6 +411,46 @@ test("add_task_comment, list_task_comments, delete_task_comment round-trip", { s
 
 test("delete_task_comment is not callable without the delete flag", { skip }, async () => {
   const result = await client.callTool({ name: "delete_task_comment", arguments: { task_id: 1, comment_id: 1 } });
+  assert.ok(result.isError, "delete tool must be gated off by default");
+  assert.match(result.content[0].text, /Unknown tool/);
+});
+
+test("create_task_relation, list_task_relations, delete_task_relation round-trip", { skip }, async () => {
+  const wc = await getWriteClient(); // delete_task_relation is delete-tier
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const pid = projects.items[0].id;
+  const mk = async (n) =>
+    parse(await client.callTool({ name: "create_task", arguments: { project_id: pid, title: `e2e rel ${n} ${process.hrtime.bigint()}` } }));
+  const a = await mk("A");
+  const b = await mk("B");
+
+  const created = parse(
+    await client.callTool({
+      name: "create_task_relation",
+      arguments: { task_id: a.id, other_task_id: b.id, relation_kind: "related" },
+    }),
+  );
+  assert.deepEqual(created, { task_id: a.id, other_task_id: b.id, relation_kind: "related", created: true });
+
+  const rels = parse(await client.callTool({ name: "list_task_relations", arguments: { task_id: a.id } }));
+  assert.ok((rels.relations.related ?? []).some((t) => t.id === b.id), "related task shows up");
+
+  const deleted = parse(
+    await wc.callTool({
+      name: "delete_task_relation",
+      arguments: { task_id: a.id, other_task_id: b.id, relation_kind: "related" },
+    }),
+  );
+  assert.equal(deleted.deleted, true);
+  const after = parse(await client.callTool({ name: "list_task_relations", arguments: { task_id: a.id } }));
+  assert.ok(!(after.relations.related ?? []).some((t) => t.id === b.id), "relation removed");
+});
+
+test("delete_task_relation is not callable without the delete flag", { skip }, async () => {
+  const result = await client.callTool({
+    name: "delete_task_relation",
+    arguments: { task_id: 1, other_task_id: 2, relation_kind: "related" },
+  });
   assert.ok(result.isError, "delete tool must be gated off by default");
   assert.match(result.content[0].text, /Unknown tool/);
 });

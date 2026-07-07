@@ -49,7 +49,78 @@ test("each tool has the expected tier", () => {
     list_task_comments: "read",
     add_task_comment: "additive",
     delete_task_comment: "delete",
+    list_task_relations: "read",
+    create_task_relation: "additive",
+    delete_task_relation: "delete",
   });
+});
+
+test("list_task_relations derives related_tasks from GET /tasks/{id} and shapes them", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "GET");
+    assert.equal(path, "/tasks/7");
+    return {
+      data: { id: 7, related_tasks: { related: [{ id: 8, title: "B", done: false, extra: "drop" }] } },
+      headers: headers(),
+    };
+  };
+  const res = await byName(buildTools({ api }), "list_task_relations").run({ task_id: 7 });
+  assert.deepEqual(res, { task_id: 7, relations: { related: [{ id: 8, title: "B", done: false }] } });
+});
+
+test("create_task_relation validates kind + ids and PUTs the relation", async () => {
+  const api = async (method, path, body) => {
+    assert.equal(method, "PUT");
+    assert.equal(path, "/tasks/7/relations");
+    assert.deepEqual(body, { other_task_id: 8, relation_kind: "blocking" });
+    return { data: { task_id: 7, other_task_id: 8, relation_kind: "blocking" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "create_task_relation").run({
+    task_id: 7,
+    other_task_id: 8,
+    relation_kind: "blocking",
+  });
+  assert.deepEqual(res, { task_id: 7, other_task_id: 8, relation_kind: "blocking", created: true });
+});
+
+test("create_task_relation rejects an unknown relation_kind before calling the api", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "create_task_relation").run({ task_id: 7, other_task_id: 8, relation_kind: "friend" }),
+    /relation_kind must be one of/,
+  );
+  assert.equal(called, false);
+});
+
+test("create_task_relation names other_task_id in its validation error", async () => {
+  let called = false;
+  const api = async () => {
+    called = true;
+    return { data: {}, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api }), "create_task_relation").run({ task_id: 7, other_task_id: -1, relation_kind: "related" }),
+    /other_task_id must be a positive integer/,
+  );
+  assert.equal(called, false);
+});
+
+test("delete_task_relation DELETEs /tasks/{id}/relations/{kind}/{otherId} and confirms", async () => {
+  const api = async (method, path) => {
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/tasks/7/relations/related/8");
+    return { data: { message: "ok" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api }), "delete_task_relation").run({
+    task_id: 7,
+    other_task_id: 8,
+    relation_kind: "related",
+  });
+  assert.deepEqual(res, { task_id: 7, other_task_id: 8, relation_kind: "related", deleted: true });
 });
 
 test("list_task_comments maps comments into the paginated envelope", async () => {
