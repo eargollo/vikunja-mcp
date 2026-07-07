@@ -2,7 +2,7 @@
 //
 // Kept out of index.js (which owns the single network egress and the server
 // wiring) so the handlers can be unit-tested with an injected fake api() — no
-// server, no network. buildTools({ api }) returns the tool list; each tool
+// server, no network. buildTools({ api, base }) returns the tool list; each tool
 // carries a `tier` so index.js can gate write/delete behind opt-in env flags.
 
 import {
@@ -11,6 +11,14 @@ import {
   requireTaskId,
   requirePositiveIntId,
   requireLabelId,
+  labelDetail,
+  requireUsername,
+  requireTeamId,
+  teamDetail,
+  teamMemberSummary,
+  caldavBaseFromApiUrl,
+  caldavTokenSummary,
+  requirePositiveIntIdArray,
   requireUserId,
   requireCommentId,
   requireComment,
@@ -86,7 +94,7 @@ const filterSortSchema = {
 
 // Read + additive only. Add tools here deliberately; give each a `tier` so the
 // gating in index.js can keep write/delete off by default.
-export function buildTools({ api }) {
+export function buildTools({ api, base }) {
   // Vikunja's project update (POST /projects/{id}) requires `title` and behaves
   // like a full replace — omitted fields can be zeroed. So fetch the current
   // project and send every editable field back, overriding only what changed.
@@ -526,6 +534,57 @@ export function buildTools({ api }) {
       },
     },
     {
+      name: "update_label",
+      tier: "write",
+      description: "Update a label's title and/or hex_color.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          label_id: { type: "integer", description: "Vikunja label id" },
+          title: { type: "string", description: "New label title" },
+          hex_color: { type: "string", description: "6-digit hex color, e.g. ff0000 (leading # allowed)" },
+        },
+        required: ["label_id"],
+        additionalProperties: false,
+      },
+      run: async ({ label_id, title, hex_color }) => {
+        const lid = requireLabelId(label_id);
+        if (title === undefined && hex_color === undefined) {
+          throw new Error("update_label: no fields to update");
+        }
+        const { data: current } = await api("GET", `/labels/${lid}`);
+        if (!current || current.id == null) {
+          throw new Error("Vikunja returned no label");
+        }
+        const body = {
+          title: title !== undefined ? requireTitle(title) : current.title,
+          hex_color:
+            hex_color !== undefined ? (optionalHexColor(hex_color) ?? "") : (current.hex_color ?? ""),
+        };
+        const { data: label } = await api("POST", `/labels/${lid}`, body);
+        if (!label || label.id == null) {
+          throw new Error("Vikunja returned an empty label response");
+        }
+        return labelDetail(label);
+      },
+    },
+    {
+      name: "delete_label",
+      tier: "delete",
+      description: "Delete a label by id. Irreversible; removes the label from all tasks.",
+      inputSchema: {
+        type: "object",
+        properties: { label_id: { type: "integer", description: "Vikunja label id" } },
+        required: ["label_id"],
+        additionalProperties: false,
+      },
+      run: async ({ label_id }) => {
+        const lid = requireLabelId(label_id);
+        await api("DELETE", `/labels/${lid}`);
+        return okResult({ label_id: lid });
+      },
+    },
+    {
       name: "add_label_to_task",
       tier: "additive",
       description: "Attach an existing label to a task.",
@@ -713,6 +772,31 @@ export function buildTools({ api }) {
         const cid = requireCommentId(comment_id);
         await api("DELETE", `/tasks/${tid}/comments/${cid}`);
         return okResult({ task_id: tid, comment_id: cid });
+      },
+    },
+    {
+      name: "update_task_comment",
+      tier: "write",
+      description: "Update the text of an existing task comment.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "integer", description: "Vikunja task id" },
+          comment_id: { type: "integer", description: "Vikunja comment id" },
+          comment: { type: "string", description: "New comment text" },
+        },
+        required: ["task_id", "comment_id", "comment"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, comment_id, comment }) => {
+        const tid = requireTaskId(task_id);
+        const cid = requireCommentId(comment_id);
+        const text = requireComment(comment);
+        const { data } = await api("POST", `/tasks/${tid}/comments/${cid}`, { comment: text });
+        if (!data || data.id == null) {
+          throw new Error("Vikunja returned an empty comment response");
+        }
+        return commentSummary(data);
       },
     },
     {
@@ -910,6 +994,77 @@ export function buildTools({ api }) {
       },
     },
     {
+      name: "update_bucket",
+      tier: "write",
+      description: "Update a kanban bucket's title and/or task limit in a project's kanban view.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "integer", description: "Vikunja project id" },
+          bucket_id: { type: "integer", description: "Bucket id (see list_buckets)" },
+          title: { type: "string", description: "New bucket title" },
+          limit: { type: "integer", description: "Max tasks in the bucket (0 = unlimited)" },
+        },
+        required: ["project_id", "bucket_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, bucket_id, title, limit }) => {
+        const pid = requireProjectId(project_id);
+        const bid = requirePositiveIntId(bucket_id, "bucket_id");
+        if (title === undefined && limit === undefined) {
+          throw new Error("update_bucket: no fields to update");
+        }
+        const viewId = await kanbanViewId(pid);
+        const { data: buckets } = await api("GET", `/projects/${pid}/views/${viewId}/buckets`);
+        const current = (buckets ?? []).find((b) => b.id === bid);
+        if (!current) {
+          throw new Error(`bucket ${bid} not found in project ${pid}`);
+        }
+        const body = {
+          title: title !== undefined ? requireTitle(title) : current.title,
+        };
+        if (limit !== undefined) {
+          const l = Number(limit);
+          if (!Number.isInteger(l) || l < 0) {
+            throw new Error("limit must be a non-negative integer");
+          }
+          body.limit = l;
+        } else {
+          body.limit = current.limit ?? 0;
+        }
+        const { data: bucket } = await api(
+          "POST",
+          `/projects/${pid}/views/${viewId}/buckets/${bid}`,
+          body,
+        );
+        if (!bucket || bucket.id == null) {
+          throw new Error("Vikunja returned an empty bucket response");
+        }
+        return { ...bucketSummary(bucket), view_id: viewId };
+      },
+    },
+    {
+      name: "delete_bucket",
+      tier: "delete",
+      description: "Delete a kanban bucket from a project's kanban view. Irreversible.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "integer", description: "Vikunja project id" },
+          bucket_id: { type: "integer", description: "Bucket id (see list_buckets)" },
+        },
+        required: ["project_id", "bucket_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, bucket_id }) => {
+        const pid = requireProjectId(project_id);
+        const bid = requirePositiveIntId(bucket_id, "bucket_id");
+        const viewId = await kanbanViewId(pid);
+        await api("DELETE", `/projects/${pid}/views/${viewId}/buckets/${bid}`);
+        return okResult({ project_id: pid, view_id: viewId, bucket_id: bid });
+      },
+    },
+    {
       name: "move_task_to_bucket",
       tier: "write",
       description: "Move a task into a kanban bucket (column) of its project's kanban view.",
@@ -964,6 +1119,115 @@ export function buildTools({ api }) {
           throw new Error("Vikunja returned an empty team response");
         }
         return { id: team.id, name: team.name };
+      },
+    },
+    {
+      name: "get_team",
+      tier: "read",
+      description: "Get a team by id with its members (id, username, admin).",
+      inputSchema: {
+        type: "object",
+        properties: { team_id: { type: "integer", description: "Vikunja team id" } },
+        required: ["team_id"],
+        additionalProperties: false,
+      },
+      run: async ({ team_id }) => {
+        const tid = requireTeamId(team_id);
+        const { data } = await api("GET", `/teams/${tid}`);
+        if (!data || data.id == null) {
+          throw new Error("Vikunja returned no team");
+        }
+        return teamDetail(data);
+      },
+    },
+    {
+      name: "update_team",
+      tier: "write",
+      description: "Rename a team.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          team_id: { type: "integer", description: "Vikunja team id" },
+          name: { type: "string", description: "New team name" },
+        },
+        required: ["team_id", "name"],
+        additionalProperties: false,
+      },
+      run: async ({ team_id, name }) => {
+        const tid = requireTeamId(team_id);
+        const teamName = requireTitle(name);
+        const { data: team } = await api("POST", `/teams/${tid}`, { name: teamName });
+        if (!team || team.id == null) {
+          throw new Error("Vikunja returned an empty team response");
+        }
+        return { id: team.id, name: team.name };
+      },
+    },
+    {
+      name: "add_team_member",
+      tier: "additive",
+      description:
+        "Add a user to a team by username (see search_users). Optional admin=true makes them a team admin.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          team_id: { type: "integer", description: "Vikunja team id" },
+          username: { type: "string", description: "Vikunja username to add" },
+          admin: { type: "boolean", description: "Grant team admin (default false)" },
+        },
+        required: ["team_id", "username"],
+        additionalProperties: false,
+      },
+      run: async ({ team_id, username, admin }) => {
+        const tid = requireTeamId(team_id);
+        const body = { username: requireUsername(username) };
+        const isAdmin = optionalBoolean(admin, "admin");
+        if (isAdmin !== undefined) body.admin = isAdmin;
+        const { data: member } = await api("PUT", `/teams/${tid}/members`, body);
+        if (!member || member.id == null) {
+          throw new Error("Vikunja returned an empty team member response");
+        }
+        return { team_id: tid, ...teamMemberSummary(member) };
+      },
+    },
+    {
+      name: "remove_team_member",
+      tier: "delete",
+      description: "Remove a user from a team by user id.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          team_id: { type: "integer", description: "Vikunja team id" },
+          user_id: { type: "integer", description: "Vikunja user id" },
+        },
+        required: ["team_id", "user_id"],
+        additionalProperties: false,
+      },
+      run: async ({ team_id, user_id }) => {
+        const tid = requireTeamId(team_id);
+        const uid = requireUserId(user_id);
+        await api("DELETE", `/teams/${tid}/members/${uid}`);
+        return okResult({ team_id: tid, user_id: uid });
+      },
+    },
+    {
+      name: "toggle_team_member_admin",
+      tier: "write",
+      description: "Toggle a team member's admin status (Vikunja flips the current value).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          team_id: { type: "integer", description: "Vikunja team id" },
+          user_id: { type: "integer", description: "Vikunja user id" },
+        },
+        required: ["team_id", "user_id"],
+        additionalProperties: false,
+      },
+      run: async ({ team_id, user_id }) => {
+        const tid = requireTeamId(team_id);
+        const uid = requireUserId(user_id);
+        await api("POST", `/teams/${tid}/members/${uid}/admin`);
+        return okResult({ team_id: tid, user_id: uid });
       },
     },
     {
@@ -1338,6 +1602,58 @@ export function buildTools({ api }) {
       },
     },
     {
+      name: "update_webhook",
+      tier: "write",
+      description:
+        "Update a project webhook's target_url, events, and/or secret. Omitted fields are preserved from the current webhook.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: { type: "integer", description: "Vikunja project id" },
+          webhook_id: { type: "integer", description: "Vikunja webhook id" },
+          target_url: { type: "string", description: "HTTP(S) URL to POST events to" },
+          events: {
+            type: "array",
+            items: { type: "string" },
+            description: 'Event names, e.g. ["task.created","task.updated"]',
+          },
+          secret: { type: "string", description: "Signing secret (pass empty string to clear)" },
+        },
+        required: ["project_id", "webhook_id"],
+        additionalProperties: false,
+      },
+      run: async ({ project_id, webhook_id, target_url, events, secret }) => {
+        const pid = requireProjectId(project_id);
+        const wid = requirePositiveIntId(webhook_id, "webhook_id");
+        if (target_url === undefined && events === undefined && secret === undefined) {
+          throw new Error("update_webhook: no fields to update");
+        }
+        const { data: webhooks } = await api("GET", `/projects/${pid}/webhooks`);
+        const current = (webhooks ?? []).find((w) => w.id === wid);
+        if (!current) {
+          throw new Error(`webhook ${wid} not found in project ${pid}`);
+        }
+        const body = {
+          target_url:
+            target_url !== undefined
+              ? requireAbsoluteUrl(target_url, "target_url")
+              : current.target_url,
+          events: events !== undefined ? requireEvents(events) : (current.events ?? []),
+        };
+        if (secret !== undefined) {
+          if (typeof secret !== "string") {
+            throw new Error("secret must be a string");
+          }
+          body.secret = secret;
+        }
+        const { data: webhook } = await api("POST", `/projects/${pid}/webhooks/${wid}`, body);
+        if (!webhook || webhook.id == null) {
+          throw new Error("Vikunja returned an empty webhook response");
+        }
+        return webhookSummary(webhook);
+      },
+    },
+    {
       name: "delete_webhook",
       tier: "delete",
       description: "Delete a project's webhook by id.",
@@ -1355,6 +1671,157 @@ export function buildTools({ api }) {
         const wid = requirePositiveIntId(webhook_id, "webhook_id");
         await api("DELETE", `/projects/${pid}/webhooks/${wid}`);
         return okResult({ project_id: pid, webhook_id: wid });
+      },
+    },
+    {
+      name: "bulk_update_tasks",
+      tier: "write",
+      description:
+        "Update multiple tasks at once (same project). Pass task_ids plus the fields to change (e.g. done, priority, title). All tasks must belong to the same project.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_ids: {
+            type: "array",
+            items: { type: "integer" },
+            description: "Task ids to update (non-empty; same project)",
+          },
+          title: { type: "string", description: "New title" },
+          description: { type: "string", description: "New description" },
+          done: { type: "boolean", description: "Mark done/undone" },
+          due_date: { type: "string", description: "Due date/time, ISO 8601 required" },
+          priority: { type: "number", description: "Priority 0-5" },
+        },
+        required: ["task_ids"],
+        additionalProperties: false,
+      },
+      run: async ({ task_ids, title, description, done, due_date, priority }) => {
+        const ids = requirePositiveIntIdArray(task_ids, "task_ids");
+        const body = { task_ids: ids };
+        if (title !== undefined) body.title = requireTitle(title);
+        const desc = optionalDescription(description);
+        if (desc !== undefined) body.description = desc;
+        const doneVal = optionalBoolean(done, "done");
+        if (doneVal !== undefined) body.done = doneVal;
+        const due = optionalDueDate(due_date);
+        if (due !== undefined) body.due_date = due;
+        const prio = optionalPriority(priority);
+        if (prio !== undefined) body.priority = prio;
+        if (Object.keys(body).length === 1) {
+          throw new Error("bulk_update_tasks: no fields to update");
+        }
+        await api("POST", "/tasks/bulk", body);
+        return okResult({ task_ids: ids });
+      },
+    },
+    {
+      name: "set_task_labels",
+      tier: "write",
+      description:
+        "Replace all labels on a task. Labels not listed are removed; listed labels are added if missing. Pass label_ids: [] to clear all labels.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "integer", description: "Vikunja task id" },
+          label_ids: {
+            type: "array",
+            items: { type: "integer" },
+            description: "Full desired label set (may be empty)",
+          },
+        },
+        required: ["task_id", "label_ids"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, label_ids }) => {
+        const tid = requireTaskId(task_id);
+        if (!Array.isArray(label_ids)) {
+          throw new Error("label_ids must be an array");
+        }
+        const ids = label_ids.map((id, i) => requirePositiveIntId(id, `label_ids[${i}]`));
+        await api("POST", `/tasks/${tid}/labels/bulk`, { labels: ids.map((id) => ({ id })) });
+        return okResult({ task_id: tid, label_ids: ids });
+      },
+    },
+    {
+      name: "set_task_assignees",
+      tier: "write",
+      description:
+        "Replace all assignees on a task. Users not listed are unassigned. Pass user_ids: [] to unassign everyone.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "integer", description: "Vikunja task id" },
+          user_ids: {
+            type: "array",
+            items: { type: "integer" },
+            description: "Full desired assignee set (may be empty)",
+          },
+        },
+        required: ["task_id", "user_ids"],
+        additionalProperties: false,
+      },
+      run: async ({ task_id, user_ids }) => {
+        const tid = requireTaskId(task_id);
+        if (!Array.isArray(user_ids)) {
+          throw new Error("user_ids must be an array");
+        }
+        const ids = user_ids.map((id, i) => requirePositiveIntId(id, `user_ids[${i}]`));
+        await api("POST", `/tasks/${tid}/assignees/bulk`, { assignees: ids.map((id) => ({ id })) });
+        return okResult({ task_id: tid, user_ids: ids });
+      },
+    },
+    {
+      name: "get_caldav_info",
+      tier: "read",
+      description:
+        "Get CalDAV connection URLs for the current user plus existing CalDAV token metadata (secrets are never returned). Use create_caldav_token to mint a password for CalDAV clients.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      run: async () => {
+        const { data: user } = await api("GET", "/user");
+        if (!user || user.id == null) {
+          throw new Error("Vikunja returned no user");
+        }
+        const { data: tokens } = await api("GET", "/user/settings/token/caldav");
+        const dav = caldavBaseFromApiUrl(base);
+        return {
+          dav_base_url: dav,
+          principals_url: `${dav}/principals/${user.username}/`,
+          projects_url: `${dav}/projects/`,
+          username: user.username,
+          tokens: (tokens ?? []).map(caldavTokenSummary),
+        };
+      },
+    },
+    {
+      name: "create_caldav_token",
+      tier: "write",
+      description:
+        "Generate a CalDAV token for the current user. Returns the token secret ONCE — treat it as sensitive; use it as the CalDAV password when OIDC or 2FA blocks your account password.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      run: async () => {
+        const { data: token } = await api("PUT", "/user/settings/token/caldav");
+        if (!token || token.id == null || token.token == null) {
+          throw new Error("Vikunja returned an empty CalDAV token response");
+        }
+        return { id: token.id, token: token.token, created: token.created ?? null };
+      },
+    },
+    {
+      name: "delete_caldav_token",
+      tier: "delete",
+      description: "Delete a CalDAV token by id (see get_caldav_info).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          token_id: { type: "integer", description: "CalDAV token id" },
+        },
+        required: ["token_id"],
+        additionalProperties: false,
+      },
+      run: async ({ token_id }) => {
+        const id = requirePositiveIntId(token_id, "token_id");
+        await api("DELETE", `/user/settings/token/caldav/${id}`);
+        return okResult({ token_id: id });
       },
     },
   ];

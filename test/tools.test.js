@@ -8,13 +8,14 @@ import assert from "node:assert/strict";
 import { buildTools } from "../tools.js";
 import { tierAllowed } from "../lib.js";
 
+const TEST_BASE = "http://vikunja.test/api/v1";
 const KNOWN_TIERS = new Set(["read", "additive", "write", "delete"]);
 const headers = (obj) => new Headers(obj);
 const noop = async () => ({ data: null, headers: headers() });
 const byName = (tools, name) => tools.find((t) => t.name === name);
 
 test("every tool declares a name, description, inputSchema, and known tier", () => {
-  for (const t of buildTools({ api: noop })) {
+  for (const t of buildTools({ api: noop, base: TEST_BASE })) {
     assert.equal(typeof t.name, "string");
     assert.equal(typeof t.description, "string");
     assert.equal(typeof t.inputSchema, "object");
@@ -24,7 +25,7 @@ test("every tool declares a name, description, inputSchema, and known tier", () 
 });
 
 test("each tool has the expected tier", () => {
-  const tiers = Object.fromEntries(buildTools({ api: noop }).map((t) => [t.name, t.tier]));
+  const tiers = Object.fromEntries(buildTools({ api: noop, base: TEST_BASE }).map((t) => [t.name, t.tier]));
   assert.deepEqual(tiers, {
     list_projects: "read",
     list_tasks: "read",
@@ -36,11 +37,16 @@ test("each tool has the expected tier", () => {
     update_task: "write",
     set_task_done: "write",
     delete_task: "delete",
+    bulk_update_tasks: "write",
+    set_task_labels: "write",
+    set_task_assignees: "write",
     update_project: "write",
     archive_project: "write",
     delete_project: "delete",
     list_labels: "read",
     create_label: "additive",
+    update_label: "write",
+    delete_label: "delete",
     add_label_to_task: "additive",
     remove_label_from_task: "delete",
     search_users: "read",
@@ -49,6 +55,7 @@ test("each tool has the expected tier", () => {
     unassign_user: "delete",
     list_task_comments: "read",
     add_task_comment: "additive",
+    update_task_comment: "write",
     delete_task_comment: "delete",
     list_task_relations: "read",
     create_task_relation: "additive",
@@ -58,9 +65,16 @@ test("each tool has the expected tier", () => {
     delete_task_attachment: "delete",
     list_buckets: "read",
     create_bucket: "additive",
+    update_bucket: "write",
+    delete_bucket: "delete",
     move_task_to_bucket: "write",
     list_teams: "read",
+    get_team: "read",
     create_team: "additive",
+    update_team: "write",
+    add_team_member: "additive",
+    remove_team_member: "delete",
+    toggle_team_member_admin: "write",
     share_project_with_user: "write",
     share_project_with_team: "write",
     create_link_share: "write",
@@ -73,10 +87,14 @@ test("each tool has the expected tier", () => {
     subscribe: "additive",
     unsubscribe: "delete",
     get_current_user: "read",
+    get_caldav_info: "read",
     list_api_tokens: "read",
     create_api_token: "write",
+    create_caldav_token: "write",
+    delete_caldav_token: "delete",
     list_webhooks: "read",
     create_webhook: "write",
+    update_webhook: "write",
     delete_webhook: "delete",
   });
 });
@@ -90,7 +108,7 @@ test("list_webhooks maps id/target_url/events into the paginated envelope", asyn
       headers: headers({ "x-pagination-total-pages": "1" }),
     };
   };
-  const res = await byName(buildTools({ api }), "list_webhooks").run({ project_id: 4 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_webhooks").run({ project_id: 4 });
   assert.deepEqual(res.items, [{ id: 1, target_url: "https://x/hook", events: ["task.created"] }]);
 });
 
@@ -105,7 +123,7 @@ test("create_webhook validates url + events and PUTs them (+ optional secret)", 
     });
     return { data: { id: 8, target_url: "https://example.com/hook", events: ["task.created"] }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "create_webhook").run({
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_webhook").run({
     project_id: 4,
     target_url: "https://example.com/hook",
     events: ["task.created"],
@@ -120,7 +138,7 @@ test("create_webhook rejects a non-http url and empty events before the api call
     called = true;
     return { data: {}, headers: headers() };
   };
-  const tools = buildTools({ api });
+  const tools = buildTools({ api, base: TEST_BASE });
   await assert.rejects(
     () => byName(tools, "create_webhook").run({ project_id: 4, target_url: "ftp://x", events: ["task.created"] }),
     /http or https/,
@@ -138,7 +156,7 @@ test("delete_webhook DELETEs /projects/{id}/webhooks/{webhookId} and confirms", 
     assert.equal(path, "/projects/4/webhooks/8");
     return { data: { message: "ok" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "delete_webhook").run({ project_id: 4, webhook_id: 8 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "delete_webhook").run({ project_id: 4, webhook_id: 8 });
   assert.deepEqual(res, { ok: true, project_id: 4, webhook_id: 8 });
 });
 
@@ -148,7 +166,7 @@ test("get_current_user fetches /user and returns the user summary", async () => 
     assert.equal(path, "/user");
     return { data: { id: 1, username: "me", name: "Me", settings: {} }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "get_current_user").run({});
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "get_current_user").run({});
   assert.deepEqual(res, { id: 1, username: "me", name: "Me" });
 });
 
@@ -161,7 +179,7 @@ test("list_api_tokens maps tokens into the paginated envelope (never the secret)
       headers: headers({ "x-pagination-total-pages": "1" }),
     };
   };
-  const res = await byName(buildTools({ api }), "list_api_tokens").run({});
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_api_tokens").run({});
   assert.deepEqual(res.items, [
     { id: 1, title: "CI", expires_at: "2027-01-01T00:00:00Z", permissions: { tasks: ["read_all"] } },
   ]);
@@ -178,7 +196,7 @@ test("create_api_token PUTs title/permissions/expires_at and returns the token s
     });
     return { data: { id: 5, title: "CI", token: "tk_secret", expires_at: "2027-01-01T00:00:00Z" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "create_api_token").run({
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_api_token").run({
     title: " CI ",
     permissions: { tasks: ["read_all"] },
     expires_at: "2027-01-01T00:00:00Z",
@@ -193,7 +211,7 @@ test("create_api_token rejects empty permissions before calling the api", async 
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "create_api_token").run({ title: "x", permissions: {}, expires_at: "2027-01-01T00:00:00Z" }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "create_api_token").run({ title: "x", permissions: {}, expires_at: "2027-01-01T00:00:00Z" }),
     /permissions must be/,
   );
   assert.equal(called, false);
@@ -208,7 +226,7 @@ test("list_notifications maps into the paginated envelope", async () => {
       headers: headers({ "x-pagination-total-pages": "1" }),
     };
   };
-  const res = await byName(buildTools({ api }), "list_notifications").run({});
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_notifications").run({});
   assert.deepEqual(res.items, [{ id: 1, name: "task.assigned", read: false, created: "2026-01-01T00:00:00Z" }]);
 });
 
@@ -218,7 +236,7 @@ test("mark_notification_read POSTs { read } (default true), can mark unread", as
     seen.push([method, path, body]);
     return { data: {}, headers: headers() };
   };
-  const tools = buildTools({ api });
+  const tools = buildTools({ api, base: TEST_BASE });
   assert.deepEqual(await byName(tools, "mark_notification_read").run({ notification_id: 3 }), {
     ok: true,
     notification_id: 3,
@@ -237,7 +255,7 @@ test("subscribe validates entity + id and PUTs the subscription", async () => {
     assert.equal(path, "/subscriptions/task/7");
     return { data: { id: 1, entity: "task", entity_id: 7 }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "subscribe").run({ entity: "task", entity_id: 7 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "subscribe").run({ entity: "task", entity_id: 7 });
   assert.deepEqual(res, { ok: true, entity: "task", entity_id: 7 });
 });
 
@@ -248,7 +266,7 @@ test("subscribe rejects an unknown entity before calling the api", async () => {
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "subscribe").run({ entity: "label", entity_id: 7 }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "subscribe").run({ entity: "label", entity_id: 7 }),
     /entity must be one of/,
   );
   assert.equal(called, false);
@@ -260,7 +278,7 @@ test("unsubscribe DELETEs /subscriptions/{entity}/{id} and confirms", async () =
     assert.equal(path, "/subscriptions/project/4");
     return { data: { message: "ok" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "unsubscribe").run({ entity: "project", entity_id: 4 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "unsubscribe").run({ entity: "project", entity_id: 4 });
   assert.deepEqual(res, { ok: true, entity: "project", entity_id: 4 });
 });
 
@@ -277,7 +295,7 @@ test("list_saved_filters extracts negative-id projects and maps to filter ids", 
       headers: headers(),
     };
   };
-  const res = await byName(buildTools({ api }), "list_saved_filters").run({});
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_saved_filters").run({});
   // filter_id = -project_id - 1  →  -3 => 2, -4 => 3
   assert.deepEqual(res, { count: 2, items: [{ id: 2, title: "F1" }, { id: 3, title: "F2" }] });
 });
@@ -289,7 +307,7 @@ test("create_saved_filter PUTs title + filter query (+ optional description)", a
     assert.deepEqual(body, { title: "Urgent", description: "d", filters: { filter: "priority >= 4" } });
     return { data: { id: 7, title: "Urgent", description: "d", filters: { filter: "priority >= 4" } }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "create_saved_filter").run({
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_saved_filter").run({
     title: " Urgent ",
     description: "d",
     filter: "priority >= 4",
@@ -316,7 +334,7 @@ test("update_saved_filter fetch-merges, preserving the rest of the filters objec
     posted = body;
     return { data: { ...current, title: body.title, filters: body.filters }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "update_saved_filter").run({ filter_id: 5, filter: "priority >= 3" });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "update_saved_filter").run({ filter_id: 5, filter: "priority >= 3" });
   assert.deepEqual(posted, {
     title: "Old",
     description: "keep",
@@ -333,7 +351,7 @@ test("create_saved_filter rejects an empty filter query before calling the api",
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "create_saved_filter").run({ title: "x", filter: "   " }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "create_saved_filter").run({ title: "x", filter: "   " }),
     /filter must not be empty/,
   );
   assert.equal(called, false);
@@ -346,7 +364,7 @@ test("update_saved_filter rejects an empty filter with a clear error (not a no-o
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "update_saved_filter").run({ filter_id: 5, filter: "" }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "update_saved_filter").run({ filter_id: 5, filter: "" }),
     /filter must not be empty/,
   );
   assert.equal(called, false);
@@ -359,7 +377,7 @@ test("update_saved_filter errors (no api call) when nothing is provided", async 
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "update_saved_filter").run({ filter_id: 5 }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "update_saved_filter").run({ filter_id: 5 }),
     /no fields to update/,
   );
   assert.equal(called, false);
@@ -371,7 +389,7 @@ test("delete_saved_filter DELETEs /filters/{id} and confirms", async () => {
     assert.equal(path, "/filters/5");
     return { data: { message: "ok" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "delete_saved_filter").run({ filter_id: 5 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "delete_saved_filter").run({ filter_id: 5 });
   assert.deepEqual(res, { ok: true, filter_id: 5 });
 });
 
@@ -381,7 +399,7 @@ test("list_teams maps id/name into the paginated envelope", async () => {
     assert.equal(path, "/teams");
     return { data: [{ id: 1, name: "Squad", extra: "drop" }], headers: headers({ "x-pagination-total-pages": "1" }) };
   };
-  const res = await byName(buildTools({ api }), "list_teams").run({});
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_teams").run({});
   assert.deepEqual(res.items, [{ id: 1, name: "Squad" }]);
 });
 
@@ -392,7 +410,7 @@ test("create_team PUTs the name and returns id/name", async () => {
     assert.deepEqual(body, { name: "Squad" });
     return { data: { id: 3, name: "Squad" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "create_team").run({ name: " Squad " });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_team").run({ name: " Squad " });
   assert.deepEqual(res, { id: 3, name: "Squad" });
 });
 
@@ -402,7 +420,7 @@ test("share_project_with_user PUTs { user_id, permission } (default read)", asyn
     seen.push([method, path, body]);
     return { data: { user_id: body.user_id, permission: body.permission }, headers: headers() };
   };
-  const tools = buildTools({ api });
+  const tools = buildTools({ api, base: TEST_BASE });
   const def = await byName(tools, "share_project_with_user").run({ project_id: 4, user_id: 9 });
   assert.deepEqual(def, { ok: true, project_id: 4, user_id: 9, permission: 0 });
   const rw = await byName(tools, "share_project_with_user").run({ project_id: 4, user_id: 9, permission: 1 });
@@ -420,7 +438,7 @@ test("share_project_with_team PUTs { team_id, permission }", async () => {
     assert.deepEqual(body, { team_id: 2, permission: 2 });
     return { data: { team_id: 2, permission: 2 }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "share_project_with_team").run({ project_id: 4, team_id: 2, permission: 2 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "share_project_with_team").run({ project_id: 4, team_id: 2, permission: 2 });
   assert.deepEqual(res, { ok: true, project_id: 4, team_id: 2, permission: 2 });
 });
 
@@ -431,7 +449,7 @@ test("create_link_share PUTs { permission } and returns the hash", async () => {
     assert.deepEqual(body, { permission: 0 });
     return { data: { id: 1, hash: "abc123", permission: 0 }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "create_link_share").run({ project_id: 4 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_link_share").run({ project_id: 4 });
   assert.deepEqual(res, { project_id: 4, hash: "abc123", permission: 0 });
 });
 
@@ -442,7 +460,7 @@ test("share tools reject an invalid permission before calling the api", async ()
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "share_project_with_team").run({ project_id: 4, team_id: 2, permission: 5 }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "share_project_with_team").run({ project_id: 4, team_id: 2, permission: 5 }),
     /permission must be/,
   );
   assert.equal(called, false);
@@ -464,7 +482,7 @@ test("list_buckets resolves the kanban view and lists its buckets", async () => 
     assert.equal(path, "/projects/5/views/9/buckets");
     return { data: [{ id: 1, title: "To-Do", limit: 0, count: 2 }], headers: new Headers() };
   });
-  const res = await byName(buildTools({ api }), "list_buckets").run({ project_id: 5 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_buckets").run({ project_id: 5 });
   assert.deepEqual(res, {
     project_id: 5,
     view_id: 9,
@@ -480,7 +498,7 @@ test("create_bucket PUTs the title under the kanban view", async () => {
     assert.deepEqual(body, { title: "Doing" });
     return { data: { id: 12, title: "Doing" }, headers: new Headers() };
   });
-  const res = await byName(buildTools({ api }), "create_bucket").run({ project_id: 5, title: " Doing " });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_bucket").run({ project_id: 5, title: " Doing " });
   assert.deepEqual(res, { id: 12, title: "Doing", limit: 0, count: 0, view_id: 9 });
 });
 
@@ -491,7 +509,7 @@ test("move_task_to_bucket POSTs { task_id } to the bucket's tasks endpoint", asy
     assert.deepEqual(body, { task_id: 7 });
     return { data: { bucket_id: 2, task_id: 7 }, headers: new Headers() };
   });
-  const res = await byName(buildTools({ api }), "move_task_to_bucket").run({ project_id: 5, bucket_id: 2, task_id: 7 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "move_task_to_bucket").run({ project_id: 5, bucket_id: 2, task_id: 7 });
   assert.deepEqual(res, { ok: true, project_id: 5, view_id: 9, bucket_id: 2, task_id: 7 });
 });
 
@@ -510,7 +528,7 @@ test("bucket tools resolve the FIRST kanban view when several exist", async () =
     assert.equal(path, "/projects/5/views/4/buckets", "uses the first kanban view (id 4)");
     return { data: [], headers: new Headers() };
   };
-  const res = await byName(buildTools({ api }), "list_buckets").run({ project_id: 5 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_buckets").run({ project_id: 5 });
   assert.equal(res.view_id, 4);
 });
 
@@ -520,7 +538,7 @@ test("bucket tools error when the project has no kanban view", async () => {
     throw new Error("should not reach the bucket endpoint");
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "list_buckets").run({ project_id: 5 }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "list_buckets").run({ project_id: 5 }),
     /no kanban view/,
   );
 });
@@ -534,7 +552,7 @@ test("list_task_attachments maps attachments into the paginated envelope", async
       headers: headers({ "x-pagination-total-pages": "1" }),
     };
   };
-  const res = await byName(buildTools({ api }), "list_task_attachments").run({ task_id: 7 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_task_attachments").run({ task_id: 7 });
   assert.deepEqual(res.items, [
     { id: 1, name: "a.txt", size: 3, mime: "text/plain", created: "2026-01-01T00:00:00Z" },
   ]);
@@ -552,7 +570,7 @@ test("upload_task_attachment builds multipart with the decoded file and returns 
       headers: headers(),
     };
   };
-  const res = await byName(buildTools({ api }), "upload_task_attachment").run({
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "upload_task_attachment").run({
     task_id: 7,
     filename: "note.txt",
     content_base64: content,
@@ -575,7 +593,7 @@ test("upload_task_attachment rejects bad base64 before calling the api", async (
     return { data: { success: [] }, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "upload_task_attachment").run({ task_id: 7, filename: "x", content_base64: "!!!" }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "upload_task_attachment").run({ task_id: 7, filename: "x", content_base64: "!!!" }),
     /base64/,
   );
   assert.equal(called, false);
@@ -588,7 +606,7 @@ test("upload_task_attachment surfaces a 200-with-errors as a failure", async () 
     headers: headers(),
   });
   await assert.rejects(
-    () => byName(buildTools({ api }), "upload_task_attachment").run({ task_id: 7, filename: "x", content_base64: content }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "upload_task_attachment").run({ task_id: 7, filename: "x", content_base64: content }),
     /upload failed/,
   );
 });
@@ -599,7 +617,7 @@ test("delete_task_attachment DELETEs /tasks/{id}/attachments/{attachmentId} and 
     assert.equal(path, "/tasks/7/attachments/9");
     return { data: { message: "ok" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "delete_task_attachment").run({ task_id: 7, attachment_id: 9 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "delete_task_attachment").run({ task_id: 7, attachment_id: 9 });
   assert.deepEqual(res, { ok: true, task_id: 7, attachment_id: 9 });
 });
 
@@ -612,7 +630,7 @@ test("list_task_relations derives related_tasks from GET /tasks/{id} and shapes 
       headers: headers(),
     };
   };
-  const res = await byName(buildTools({ api }), "list_task_relations").run({ task_id: 7 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_task_relations").run({ task_id: 7 });
   assert.deepEqual(res, { task_id: 7, relations: { related: [{ id: 8, title: "B", done: false }] } });
 });
 
@@ -623,7 +641,7 @@ test("create_task_relation validates kind + ids and PUTs the relation", async ()
     assert.deepEqual(body, { other_task_id: 8, relation_kind: "blocking" });
     return { data: { task_id: 7, other_task_id: 8, relation_kind: "blocking" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "create_task_relation").run({
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_task_relation").run({
     task_id: 7,
     other_task_id: 8,
     relation_kind: "blocking",
@@ -638,7 +656,7 @@ test("create_task_relation rejects an unknown relation_kind before calling the a
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "create_task_relation").run({ task_id: 7, other_task_id: 8, relation_kind: "friend" }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "create_task_relation").run({ task_id: 7, other_task_id: 8, relation_kind: "friend" }),
     /relation_kind must be one of/,
   );
   assert.equal(called, false);
@@ -651,7 +669,7 @@ test("create_task_relation names other_task_id in its validation error", async (
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "create_task_relation").run({ task_id: 7, other_task_id: -1, relation_kind: "related" }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "create_task_relation").run({ task_id: 7, other_task_id: -1, relation_kind: "related" }),
     /other_task_id must be a positive integer/,
   );
   assert.equal(called, false);
@@ -663,7 +681,7 @@ test("delete_task_relation DELETEs /tasks/{id}/relations/{kind}/{otherId} and co
     assert.equal(path, "/tasks/7/relations/related/8");
     return { data: { message: "ok" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "delete_task_relation").run({
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "delete_task_relation").run({
     task_id: 7,
     other_task_id: 8,
     relation_kind: "related",
@@ -680,7 +698,7 @@ test("list_task_comments maps comments into the paginated envelope", async () =>
       headers: headers({ "x-pagination-total-pages": "1" }),
     };
   };
-  const res = await byName(buildTools({ api }), "list_task_comments").run({ task_id: 7, per_page: 20 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_task_comments").run({ task_id: 7, per_page: 20 });
   assert.deepEqual(res.items, [{ id: 1, comment: "hi", author: "me", created: "2026-01-01T00:00:00Z" }]);
 });
 
@@ -691,7 +709,7 @@ test("add_task_comment validates and PUTs { comment }, returns the summary", asy
     assert.deepEqual(body, { comment: "hello" });
     return { data: { id: 9, comment: "hello", author: { username: "me" } }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "add_task_comment").run({ task_id: 7, comment: "  hello  " });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "add_task_comment").run({ task_id: 7, comment: "  hello  " });
   assert.deepEqual(res, { id: 9, comment: "hello", author: "me", created: null });
 });
 
@@ -702,7 +720,7 @@ test("add_task_comment rejects an empty comment before calling the api", async (
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "add_task_comment").run({ task_id: 7, comment: "   " }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "add_task_comment").run({ task_id: 7, comment: "   " }),
     /comment must not be empty/,
   );
   assert.equal(called, false);
@@ -714,7 +732,7 @@ test("delete_task_comment DELETEs /tasks/{id}/comments/{commentId} and confirms"
     assert.equal(path, "/tasks/7/comments/9");
     return { data: { message: "ok" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "delete_task_comment").run({ task_id: 7, comment_id: 9 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "delete_task_comment").run({ task_id: 7, comment_id: 9 });
   assert.deepEqual(res, { ok: true, task_id: 7, comment_id: 9 });
 });
 
@@ -724,11 +742,11 @@ test("search_users hits /users?s= and maps id/username/name; null → []", async
     assert.equal(path, "/users?s=mc");
     return { data: [{ id: 1, username: "mctester", name: "MC", extra: "drop" }], headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "search_users").run({ query: " mc " });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "search_users").run({ query: " mc " });
   assert.deepEqual(res, { count: 1, items: [{ id: 1, username: "mctester", name: "MC" }] });
 
   const apiNull = async () => ({ data: null, headers: headers() });
-  const empty = await byName(buildTools({ api: apiNull }), "search_users").run({ query: "zzz" });
+  const empty = await byName(buildTools({ api: apiNull, base: TEST_BASE }), "search_users").run({ query: "zzz" });
   assert.deepEqual(empty, { count: 0, items: [] });
 });
 
@@ -738,7 +756,7 @@ test("search_users rejects an empty query before calling the api", async () => {
     called = true;
     return { data: [], headers: headers() };
   };
-  await assert.rejects(() => byName(buildTools({ api }), "search_users").run({ query: "  " }), /query/);
+  await assert.rejects(() => byName(buildTools({ api, base: TEST_BASE }), "search_users").run({ query: "  " }), /query/);
   assert.equal(called, false);
 });
 
@@ -751,7 +769,7 @@ test("list_task_assignees derives assignees from GET /tasks/{id} (the list endpo
       headers: headers(),
     };
   };
-  const res = await byName(buildTools({ api }), "list_task_assignees").run({ task_id: 7 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_task_assignees").run({ task_id: 7 });
   assert.deepEqual(res, { task_id: 7, count: 1, items: [{ id: 1, username: "me", name: "" }] });
 });
 
@@ -762,7 +780,7 @@ test("assign_user PUTs { user_id } and confirms", async () => {
     assert.deepEqual(body, { user_id: 3 });
     return { data: { user_id: 3 }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "assign_user").run({ task_id: 7, user_id: 3 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "assign_user").run({ task_id: 7, user_id: 3 });
   assert.deepEqual(res, { ok: true, task_id: 7, user_id: 3 });
 });
 
@@ -772,7 +790,7 @@ test("unassign_user DELETEs /tasks/{id}/assignees/{userId} and confirms", async 
     assert.equal(path, "/tasks/7/assignees/3");
     return { data: { message: "ok" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "unassign_user").run({ task_id: 7, user_id: 3 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "unassign_user").run({ task_id: 7, user_id: 3 });
   assert.deepEqual(res, { ok: true, task_id: 7, user_id: 3 });
 });
 
@@ -785,7 +803,7 @@ test("list_labels maps id/title/hex_color into the paginated envelope", async ()
       headers: headers({ "x-pagination-total-pages": "1" }),
     };
   };
-  const res = await byName(buildTools({ api }), "list_labels").run({ per_page: 50 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_labels").run({ per_page: 50 });
   assert.deepEqual(res.items, [{ id: 1, title: "urgent", hex_color: "ff0000" }]);
 });
 
@@ -796,7 +814,7 @@ test("create_label PUTs title + optional hex_color and returns the summary", asy
     assert.deepEqual(body, { title: "urgent", hex_color: "ff0000" });
     return { data: { id: 5, title: "urgent", hex_color: "ff0000" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "create_label").run({ title: " urgent ", hex_color: "#FF0000" });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_label").run({ title: " urgent ", hex_color: "#FF0000" });
   assert.deepEqual(res, { id: 5, title: "urgent", hex_color: "ff0000" });
 });
 
@@ -807,7 +825,7 @@ test("add_label_to_task validates ids and PUTs { label_id }", async () => {
     assert.deepEqual(body, { label_id: 3 });
     return { data: { label_id: 3 }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "add_label_to_task").run({ task_id: 7, label_id: 3 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "add_label_to_task").run({ task_id: 7, label_id: 3 });
   assert.deepEqual(res, { ok: true, task_id: 7, label_id: 3 });
 });
 
@@ -818,7 +836,7 @@ test("add_label_to_task rejects a bad label_id before calling the api", async ()
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "add_label_to_task").run({ task_id: 7, label_id: 0 }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "add_label_to_task").run({ task_id: 7, label_id: 0 }),
     /label_id must be a positive integer/,
   );
   assert.equal(called, false);
@@ -830,7 +848,7 @@ test("remove_label_from_task DELETEs /tasks/{id}/labels/{labelId} and confirms",
     assert.equal(path, "/tasks/7/labels/3");
     return { data: { message: "ok" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "remove_label_from_task").run({ task_id: 7, label_id: 3 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "remove_label_from_task").run({ task_id: 7, label_id: 3 });
   assert.deepEqual(res, { ok: true, task_id: 7, label_id: 3 });
 });
 
@@ -840,7 +858,7 @@ test("get_project validates id, fetches /projects/{id}, shapes the detail", asyn
     assert.equal(path, "/projects/4");
     return { data: { id: 4, title: "Work", parent_project_id: 0, is_archived: false }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "get_project").run({ project_id: 4 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "get_project").run({ project_id: 4 });
   assert.equal(res.id, 4);
   assert.equal(res.parent_project_id, null);
 });
@@ -852,7 +870,7 @@ test("create_project PUTs title + optional description/parent and returns id/tit
     assert.deepEqual(body, { title: "New", description: "d", parent_project_id: 2 });
     return { data: { id: 8, title: "New", description: "d", parent_project_id: 2, is_archived: false }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "create_project").run({
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_project").run({
     title: "  New  ",
     description: "d",
     parent_project_id: 2,
@@ -890,7 +908,7 @@ test("update_project fetch-merges current fields, overriding only the change", a
     posted = body;
     return { data: { ...current, ...body }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "update_project").run({ project_id: 4, title: "Renamed" });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "update_project").run({ project_id: 4, title: "Renamed" });
   // title overridden; every other editable field preserved (no clobber)
   assert.deepEqual(posted, {
     title: "Renamed",
@@ -911,7 +929,7 @@ test("update_project errors (without any api call) when no field is given", asyn
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "update_project").run({ project_id: 4 }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "update_project").run({ project_id: 4 }),
     /no fields to update/,
   );
   assert.equal(called, false, "must not even fetch when there is nothing to update");
@@ -925,7 +943,7 @@ test("archive_project fetch-merges and toggles is_archived, preserving the title
     posted.push(body);
     return { data: { ...current, is_archived: body.is_archived }, headers: headers() };
   };
-  const tools = buildTools({ api });
+  const tools = buildTools({ api, base: TEST_BASE });
   assert.equal((await byName(tools, "archive_project").run({ project_id: 4 })).is_archived, true);
   assert.equal((await byName(tools, "archive_project").run({ project_id: 4, archived: false })).is_archived, false);
   assert.equal(posted[0].title, "P", "title carried through so Vikunja's non-empty check passes");
@@ -939,7 +957,7 @@ test("delete_project DELETEs and confirms", async () => {
     assert.equal(path, "/projects/4");
     return { data: { message: "Successfully deleted." }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "delete_project").run({ project_id: 4 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "delete_project").run({ project_id: 4 });
   assert.deepEqual(res, { ok: true, project_id: 4 });
 });
 
@@ -949,7 +967,7 @@ test("delete_task DELETEs /tasks/{id} and confirms", async () => {
     assert.equal(path, "/tasks/7");
     return { data: null, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "delete_task").run({ task_id: 7 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "delete_task").run({ task_id: 7 });
   assert.deepEqual(res, { ok: true, task_id: 7 });
 });
 
@@ -960,7 +978,7 @@ test("delete_task validates id before calling the api", async () => {
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "delete_task").run({ task_id: 0 }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "delete_task").run({ task_id: 0 }),
     /positive integer/,
   );
   assert.equal(called, false);
@@ -973,7 +991,7 @@ test("delete_project validates id before calling the api", async () => {
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "delete_project").run({ project_id: 0 }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "delete_project").run({ project_id: 0 }),
     /positive integer/,
   );
   assert.equal(called, false);
@@ -988,14 +1006,14 @@ test("get_task validates the id, fetches /tasks/{id}, and shapes the detail", as
       headers: headers(),
     };
   };
-  const res = await byName(buildTools({ api }), "get_task").run({ task_id: 42 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "get_task").run({ task_id: 42 });
   assert.equal(res.id, 42);
   assert.equal(res.due_date, null, "zero-date normalized");
 });
 
 test("get_task errors when Vikunja returns an empty/malformed body", async () => {
   const api = async () => ({ data: null, headers: headers() });
-  await assert.rejects(() => byName(buildTools({ api }), "get_task").run({ task_id: 5 }), /no task/);
+  await assert.rejects(() => byName(buildTools({ api, base: TEST_BASE }), "get_task").run({ task_id: 5 }), /no task/);
 });
 
 test("get_task rejects a bad id before calling the api", async () => {
@@ -1004,7 +1022,7 @@ test("get_task rejects a bad id before calling the api", async () => {
     called = true;
     return { data: {}, headers: headers() };
   };
-  await assert.rejects(() => byName(buildTools({ api }), "get_task").run({ task_id: 0 }), /positive integer/);
+  await assert.rejects(() => byName(buildTools({ api, base: TEST_BASE }), "get_task").run({ task_id: 0 }), /positive integer/);
   assert.equal(called, false);
 });
 
@@ -1014,7 +1032,7 @@ test("list_tasks forwards filter/sort_by/order alongside pagination", async () =
     seenPath = path;
     return { data: [], headers: headers() };
   };
-  await byName(buildTools({ api }), "list_tasks").run({
+  await byName(buildTools({ api, base: TEST_BASE }), "list_tasks").run({
     project_id: 3,
     filter: "done = false",
     sort_by: "priority",
@@ -1033,7 +1051,7 @@ test("list_all_tasks hits /tasks with filter/sort and maps id/title/done/project
       headers: headers({ "x-pagination-total-pages": "1" }),
     };
   };
-  const res = await byName(buildTools({ api }), "list_all_tasks").run({
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_all_tasks").run({
     filter: "priority >= 3",
     sort_by: "due_date",
     order: "asc",
@@ -1049,7 +1067,7 @@ test("list_all_tasks rejects an invalid order before calling the api", async () 
     return { data: [], headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "list_all_tasks").run({ order: "up" }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "list_all_tasks").run({ order: "up" }),
     /asc.*desc/,
   );
   assert.equal(called, false);
@@ -1060,7 +1078,7 @@ test("the real registration filter gates write/delete tiers behind their flags",
   // buildTools ships only read/additive today, so inject synthetic gated tools
   // to prove the filter drops them by default and admits them per-flag.
   const registry = [
-    ...buildTools({ api: noop }),
+    ...buildTools({ api: noop, base: TEST_BASE }),
     { name: "synthetic_write", tier: "write" },
     { name: "synthetic_delete", tier: "delete" },
   ];
@@ -1070,7 +1088,7 @@ test("the real registration filter gates write/delete tiers behind their flags",
   assert.ok(!defaultSet.includes("synthetic_write"), "write gated by default");
   assert.ok(!defaultSet.includes("synthetic_delete"), "delete gated by default");
   // every real default tool is read/additive
-  for (const t of buildTools({ api: noop })) {
+  for (const t of buildTools({ api: noop, base: TEST_BASE })) {
     if (t.tier === "read" || t.tier === "additive") {
       assert.ok(defaultSet.includes(t.name), `${t.name} exposed by default`);
     } else {
@@ -1092,7 +1110,7 @@ test("list_projects maps items and shapes the paginated envelope from headers", 
       headers: headers({ "x-pagination-total-pages": "3" }),
     };
   };
-  const res = await byName(buildTools({ api }), "list_projects").run({});
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_projects").run({});
   assert.deepEqual(res, {
     page: 1,
     total_pages: 3,
@@ -1107,7 +1125,7 @@ test("list_projects forwards page/per_page as a query string", async () => {
     seenPath = path;
     return { data: [], headers: headers() };
   };
-  await byName(buildTools({ api }), "list_projects").run({ page: 2, per_page: 10 });
+  await byName(buildTools({ api, base: TEST_BASE }), "list_projects").run({ page: 2, per_page: 10 });
   assert.equal(seenPath, "/projects?page=2&per_page=10");
 });
 
@@ -1118,7 +1136,7 @@ test("list_tasks validates project_id before touching the network", async () => 
     return { data: [], headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "list_tasks").run({ project_id: -1 }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "list_tasks").run({ project_id: -1 }),
     /positive integer/,
   );
   assert.equal(called, false, "api must not be called on invalid input");
@@ -1133,7 +1151,7 @@ test("list_tasks maps tasks under the validated project path", async () => {
       headers: headers({ "x-pagination-total-pages": "1" }),
     };
   };
-  const res = await byName(buildTools({ api }), "list_tasks").run({ project_id: 7 });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "list_tasks").run({ project_id: 7 });
   assert.deepEqual(res.items, [{ id: 42, title: "T", done: false }]);
 });
 
@@ -1144,7 +1162,7 @@ test("create_task trims the title, PUTs it, and returns the task detail", async 
     assert.deepEqual(body, { title: "Hello" });
     return { data: { id: 9, title: "Hello", project_id: 5, done: false }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "create_task").run({ project_id: 5, title: "  Hello  " });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_task").run({ project_id: 5, title: "  Hello  " });
   assert.equal(res.id, 9);
   assert.equal(res.title, "Hello");
   assert.equal(res.project_id, 5);
@@ -1163,7 +1181,7 @@ test("create_task includes optional description/due_date/priority in the body", 
     });
     return { data: { id: 9, title: "Hello", project_id: 5, done: false, description: "d", priority: 4, due_date: "2026-08-01T00:00:00.000Z" }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "create_task").run({
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_task").run({
     project_id: 5,
     title: "Hello",
     description: "d",
@@ -1183,7 +1201,7 @@ test("update_task POSTs only the provided fields and returns the shaped detail",
     assert.deepEqual(body, { priority: 5, done: true });
     return { data: { id: 12, title: "T", done: true, project_id: 1, priority: 5 }, headers: headers() };
   };
-  const res = await byName(buildTools({ api }), "update_task").run({ task_id: 12, priority: 5, done: true });
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "update_task").run({ task_id: 12, priority: 5, done: true });
   assert.equal(res.id, 12);
   assert.equal(res.done, true);
   assert.equal(res.priority, 5);
@@ -1196,7 +1214,7 @@ test("update_task rejects when no updatable field is supplied", async () => {
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "update_task").run({ task_id: 12 }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "update_task").run({ task_id: 12 }),
     /no fields to update/,
   );
   assert.equal(called, false);
@@ -1209,7 +1227,7 @@ test("update_task validates task_id before touching the network", async () => {
     return { data: {}, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "update_task").run({ task_id: -1, done: true }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "update_task").run({ task_id: -1, done: true }),
     /positive integer/,
   );
   assert.equal(called, false);
@@ -1221,7 +1239,7 @@ test("set_task_done defaults to done=true and can reopen with done=false", async
     seen.push([method, path, body]);
     return { data: { id: 3, title: "T", done: body.done, project_id: 1 }, headers: headers() };
   };
-  const tools = buildTools({ api });
+  const tools = buildTools({ api, base: TEST_BASE });
   const doneRes = await byName(tools, "set_task_done").run({ task_id: 3 });
   assert.equal(doneRes.done, true);
   const openRes = await byName(tools, "set_task_done").run({ task_id: 3, done: false });
@@ -1239,7 +1257,7 @@ test("create_task rejects an empty title before calling the api", async () => {
     return { data: { id: 1 }, headers: headers() };
   };
   await assert.rejects(
-    () => byName(buildTools({ api }), "create_task").run({ project_id: 5, title: "   " }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "create_task").run({ project_id: 5, title: "   " }),
     /must not be empty/,
   );
   assert.equal(called, false);
@@ -1248,7 +1266,45 @@ test("create_task rejects an empty title before calling the api", async () => {
 test("create_task surfaces an empty Vikunja response as an error", async () => {
   const api = async () => ({ data: null, headers: headers() });
   await assert.rejects(
-    () => byName(buildTools({ api }), "create_task").run({ project_id: 5, title: "x" }),
+    () => byName(buildTools({ api, base: TEST_BASE }), "create_task").run({ project_id: 5, title: "x" }),
     /empty task response/,
   );
+});
+
+test("update_label POSTs merged fields to /labels/{id}", async () => {
+  const api = async (method, path, body) => {
+    if (method === "GET") return { data: { id: 3, title: "Old", hex_color: "aabbcc" }, headers: headers() };
+    assert.equal(method, "POST");
+    assert.equal(path, "/labels/3");
+    assert.equal(body.title, "New");
+    return { data: { id: 3, title: "New", hex_color: "aabbcc" }, headers: headers() };
+  };
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "update_label").run({ label_id: 3, title: "New" });
+  assert.equal(res.title, "New");
+});
+
+test("bulk_update_tasks POSTs task_ids and changed fields to /tasks/bulk", async () => {
+  const posted = [];
+  const api = async (method, path, body) => {
+    posted.push([method, path, body]);
+    return { data: {}, headers: headers() };
+  };
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "bulk_update_tasks").run({
+    task_ids: [1, 2],
+    done: true,
+  });
+  assert.deepEqual(res, { ok: true, task_ids: [1, 2] });
+  assert.deepEqual(posted[0][2], { task_ids: [1, 2], done: true });
+});
+
+test("get_caldav_info returns dav URLs and token metadata", async () => {
+  const api = async (method, path) => {
+    if (path === "/user") return { data: { id: 1, username: "mcptester" }, headers: headers() };
+    if (path === "/user/settings/token/caldav") return { data: [{ id: 9, created: "2026-01-01T00:00:00Z" }], headers: headers() };
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "get_caldav_info").run({});
+  assert.equal(res.username, "mcptester");
+  assert.equal(res.dav_base_url, "http://vikunja.test/dav");
+  assert.deepEqual(res.tokens, [{ id: 9, created: "2026-01-01T00:00:00Z" }]);
 });

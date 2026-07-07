@@ -14,11 +14,11 @@ This one is the opposite:
 - **One egress point** — every request goes through `makeApi()` in `api.js`
   that only ever calls `VIKUNJA_URL` with your token. Grep it; that's the whole
   network surface.
-- **Scoped: read + additive only** — list and create tools that affect only the
-  token holder's own data. Anything that grants access to a third party (shares,
-  link shares, webhooks) or mints credentials (API tokens) is **write**-gated.
-  No delete, no bulk, no "call arbitrary endpoint". A hijacked agent on a default
-  install can add a task or read a list — not share your projects or exfiltrate data.
+- **Scoped by default** — read and additive tools are always on (list, get, create
+  for your token). Write tools (updates, sharing, webhooks, credential minting)
+  require `VIKUNJA_MCP_ALLOW_WRITE=1`; delete tools require
+  `VIKUNJA_MCP_ALLOW_DELETE=1`. A hijacked agent on a default install can add a
+  task or read a list — not modify, share, bulk-replace assignees, or delete.
 - **Secrets from env**, never hardcoded.
 - **No build step** — plain Node ESM, `node index.js`.
 
@@ -96,7 +96,9 @@ dates, priority, percent_done, labels, assignees). `create_task` takes optional
 reopens a task; `delete_task` (delete) removes a task permanently.
 
 Add tools deliberately — the tool list lives in the `buildTools` factory in
-`tools.js`, and `index.js` only exposes the tiers its env flags permit.
+`tools.js`, and `index.js` only exposes the tiers its env flags permit. Each tool
+also exposes an MCP **title** for display in clients (e.g. `list_projects` →
+"List Projects").
 
 ## Using the tools
 
@@ -129,31 +131,37 @@ Invalid input (bad `project_id`, empty `title`, unknown tool) comes back as an M
 
 ## API coverage
 
-The goal is to cover the whole Vikunja v1 API, added TDD-style (unit + e2e). To
-keep the [trust posture](#why-this-exists), tools are tiered: **read** and
-**additive** are always on; **write** (update, sharing, egress, credential minting)
-tools require `VIKUNJA_MCP_ALLOW_WRITE=1` and **delete** tools require
+The goal is to cover the **most common** Vikunja v1 operations agents need,
+added TDD-style (unit + e2e). This is not a complete mirror of every endpoint
+(CalDAV sync itself uses `/dav`, not these tools). To keep the
+[trust posture](#why-this-exists), tools are tiered: **read** and **additive**
+are always on; **write** (update, sharing, egress, credential minting, bulk
+replace) tools require `VIKUNJA_MCP_ALLOW_WRITE=1` and **delete** tools require
 `VIKUNJA_MCP_ALLOW_DELETE=1`, so a default install can never modify or destroy
 data ([#4](https://github.com/eargollo/vikunja-mcp/issues/4)).
 
 | Area | Status |
 | --- | --- |
-| Projects — list, create | ✅ shipped |
-| Tasks — list, create, delete | ✅ shipped |
+| Projects — list, get, create, update, archive, delete | ✅ shipped |
+| Tasks — list, get, create, update, delete, bulk update | ✅ shipped |
 | Task detail & filtering (`get_task`, `list_all_tasks`, filter/sort) | ✅ shipped |
 | Rich task create & update (`update_task`, `set_task_done`, create fields) | ✅ shipped |
-| Projects — get, create, update, archive, delete | ✅ shipped |
-| Labels (`list`/`create_label`, add/remove on tasks) | ✅ shipped |
-| Assignees (`search_users`, list/assign/unassign) | ✅ shipped |
-| Task comments (list/add/delete) | ✅ shipped |
+| Labels — list/create/update/delete; add/remove on tasks; bulk replace on task | ✅ shipped |
+| Assignees (`search_users`, list/assign/unassign; bulk replace on task) | ✅ shipped |
+| Task comments (list/add/update/delete) | ✅ shipped |
 | Task relations (list/create/delete) | ✅ shipped |
 | Attachments (list/upload/delete, base64 upload) | ✅ shipped |
-| Kanban buckets (list/create, move task) | ✅ shipped |
-| Teams & sharing (teams, user/team/link shares) | ✅ shipped |
+| Kanban buckets (list/create/update/delete, move task) | ✅ shipped |
+| Teams — list/create/get/update; members add/remove/admin toggle | ✅ shipped |
+| Project sharing (user/team/link shares) | ✅ shipped |
 | Saved filters (list/create/update/delete) | ✅ shipped |
 | Subscriptions & notifications (list/mark-read, subscribe/unsubscribe) | ✅ shipped |
-| Current user & API tokens (`get_current_user`, list/create tokens) | ✅ shipped |
-| Webhooks (list/create/delete) | ✅ shipped |
+| Current user, API tokens, CalDAV tokens & connection info | ✅ shipped |
+| Webhooks (list/create/update/delete) | ✅ shipped |
+
+Partial / intentional gaps: no arbitrary `/routes` proxy, no admin endpoints, no
+user-level webhooks, no `outputSchema` on tool results (JSON text is enough for
+now). See [CHANGELOG.md](CHANGELOG.md) for recent additions.
 
 Full roadmap: [#21](https://github.com/eargollo/vikunja-mcp/issues/21).
 

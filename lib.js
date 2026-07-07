@@ -462,3 +462,51 @@ export function requireNodeMinVersion(minMajor = 20) {
     throw new Error(`vikunja-mcp requires Node.js >= ${minMajor} (File API missing)`);
   }
 }
+
+export function requireTeamId(value) {
+  return requirePositiveIntId(value, "team_id");
+}
+
+export function requireUsername(value) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error("username must be a non-empty string");
+  }
+  return value.trim();
+}
+
+export function labelDetail(label) {
+  return { id: label.id, title: label.title, hex_color: label.hex_color ?? "" };
+}
+
+export function teamMemberSummary(m) {
+  return { id: m.id, username: m.username ?? "", admin: Boolean(m.admin) };
+}
+
+export function teamDetail(team) {
+  const members = (team.members ?? team.team_members ?? []).map(teamMemberSummary);
+  return { id: team.id, name: team.name, members };
+}
+
+export function caldavBaseFromApiUrl(apiBase) {
+  const url = new URL(apiBase);
+  return `${url.origin}/dav`;
+}
+
+export function caldavTokenSummary(t) {
+  return { id: t.id, created: t.created ?? null };
+}
+
+export function requirePositiveIntIdArray(value, name) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${name} must be a non-empty array of positive integers`);
+  }
+  return value.map((id, i) => requirePositiveIntId(id, `${name}[${i}]`));
+}
+
+// Human-readable MCP tool title from snake_case name (e.g. list_projects → List Projects).
+export function toolDisplayTitle(name) {
+  return name
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
