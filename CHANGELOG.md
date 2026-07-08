@@ -25,6 +25,9 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
   **not** project dependencies — the lint job installs them ephemerally at
   pinned versions (`--no-save`), so the runtime tree stays at one dependency and
   the published package is unchanged. Config lives in `eslint.config.js`.
+- Added a **TruffleHog** secret-scan job (PR-only, `--only-verified`) that
+  *validates* findings against provider APIs, adding a live-credential check on
+  top of GitHub's native secret scanning + push protection.
 
 ### Docs
 

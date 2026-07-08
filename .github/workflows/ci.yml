@@ -67,6 +67,29 @@ jobs:
         with:
           fail-on-severity: high
 
+  secret-scan:
+    name: Secret scan (TruffleHog)
+    runs-on: ubuntu-latest
+    # PR-only, like dependency-review: scans the PR's commit range. Pushes to
+    # main go through required PRs (branch ruleset) and GitHub's own push
+    # protection, so scanning here covers the meaningful path without the
+    # base==head edge cases TruffleHog hits on some push events.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0 # need both base and head commits to diff the range
+      # TruffleHog *validates* findings — it calls the provider API to confirm a
+      # secret is live — so --only-verified fails the build solely on a
+      # confirmed-active credential, layering validation over GitHub's native
+      # detection + push protection.
+      - name: Scan for verified secrets
+        uses: trufflesecurity/trufflehog@00155c9dc586f34d189adc83d3ac2698c2ec551f # v3.95.8
+        with:
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          extra_args: --only-verified
+
   e2e:
     name: End-to-end (live Vikunja)
     runs-on: ubuntu-latest
