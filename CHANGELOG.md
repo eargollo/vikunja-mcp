@@ -5,6 +5,13 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Unreleased
 
+### Docs
+
+- Restored concrete **OpenClaw** registration steps (the `mcp add` / `mcp probe`
+  commands, source + npm modes), which the earlier gateway-generalization pass
+  had reduced to a `<gateway-cli>` placeholder — using neutral placeholders, no
+  private host/paths.
+
 ## 1.1.1 - 2026-07-07
 
 ### Docs
