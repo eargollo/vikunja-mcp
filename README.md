@@ -260,26 +260,34 @@ client's global MCP config); the npm form needs no clone. To run from source
 instead, use `"command": "node"` with `"args": ["/path/to/vikunja-mcp/index.js"]`
 — remember `node_modules` must sit next to `index.js` (see [Running](#running)).
 
-### Register in an MCP gateway (OpenClaw, etc.)
+### Register in OpenClaw
 
-For a gateway that launches MCP servers as local processes, point it at either
-run mode. The exact CLI depends on your gateway; the shape is:
+OpenClaw runs MCP servers as local processes inside its container, so register
+vikunja with `mcp add` and verify with `mcp probe`. Air-gapped setups run **from
+source** — clone into the gateway's persisted home (so it survives restarts) and
+point at `index.js` (`node_modules` must sit next to it):
 
 ```bash
-# from npm (gateway fetches it on each start)
-<gateway-cli> mcp add vikunja \
+# from source (no npm/npx needed at runtime)
+sudo docker exec openclaw node dist/index.js mcp add vikunja \
+  --command node \
+  --arg /path/to/vikunja-mcp/index.js \
+  --env VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
+  --env VIKUNJA_API_TOKEN=tk_...
+
+# or, if the gateway has network access, straight from npm
+sudo docker exec openclaw node dist/index.js mcp add vikunja \
   --command npx \
   --arg -y --arg @eargollo/vikunja-mcp@latest \
   --env VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
   --env VIKUNJA_API_TOKEN=tk_...
 
-# from source (air-gapped: node_modules must sit next to index.js)
-<gateway-cli> mcp add vikunja \
-  --command node \
-  --arg /path/to/vikunja-mcp/index.js \
-  --env VIKUNJA_URL=https://app.vikunja.cloud/api/v1 \
-  --env VIKUNJA_API_TOKEN=tk_...
+# verify the tools are exposed
+sudo docker exec openclaw node dist/index.js mcp probe vikunja --json
 ```
+
+Replace `openclaw` with your container name. Other MCP gateways use a different
+CLI but the same shape: a command (`node` or `npx`), args, and the two env vars.
 
 ## Tests
 
