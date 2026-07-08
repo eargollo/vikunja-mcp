@@ -21,6 +21,10 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 - `ci.yml` now declares least-privilege `permissions: contents: read`.
 - Added `.npmrc` with `ignore-scripts=true` so dependency install/lifecycle
   scripts never run (belt-and-suspenders; the tree has none today).
+- Added an ESLint (`eslint-plugin-security`) CI gate. eslint and the plugin are
+  **not** project dependencies — the lint job installs them ephemerally at
+  pinned versions (`--no-save`), so the runtime tree stays at one dependency and
+  the published package is unchanged. Config lives in `eslint.config.js`.
 
 ### Docs
 

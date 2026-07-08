@@ -36,6 +36,24 @@ jobs:
       # coverage drops below the thresholds in the test:coverage script.
       - run: npm run test:coverage
 
+  lint:
+    name: Lint (eslint-plugin-security)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      # eslint + eslint-plugin-security are deliberately NOT project deps (keeps
+      # the tree to one runtime dep, no devDeps). Install them ephemerally, at
+      # pinned versions, without touching package.json or the lockfile. .npmrc
+      # (ignore-scripts) applies here too, so nothing runs install hooks.
+      - name: Run ESLint (ephemeral, pinned)
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund \
+            eslint@10.6.0 eslint-plugin-security@4.0.1
+          npx --no-install eslint --max-warnings 0 index.js api.js lib.js tools.js
+
   dependency-review:
     name: Dependency review
     runs-on: ubuntu-latest
