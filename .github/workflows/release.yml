@@ -24,7 +24,7 @@ jobs:
     name: Release + publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
 
@@ -32,7 +32,7 @@ jobs:
       # .npmrc with a placeholder auth token, which npm then tries to use
       # instead of falling through to OIDC Trusted Publishing (→ 404). The
       # default registry is npmjs.org already, and OIDC needs no token.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm
@@ -54,6 +54,6 @@ jobs:
           npm publish --access public
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           generate_release_notes: true

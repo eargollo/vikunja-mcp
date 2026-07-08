@@ -5,6 +5,30 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Unreleased
 
+### CI / tooling
+
+- Added continuous supply-chain security: CI now gates on `npm audit --omit=dev
+  --audit-level=high` and an `actions/dependency-review-action` check on PRs, so
+  a newly-disclosed CVE in the dependency tree fails the build instead of
+  shipping silently.
+- Added `.github/dependabot.yml` for the `npm` and `github-actions` ecosystems
+  (weekly bumps, grouped; security updates open on their own).
+- Pinned all GitHub Actions to full commit SHAs (with version comments) instead
+  of floating `@v4`/`@v2` tags, closing the mutable-tag risk on the publish
+  pipeline. Dependabot keeps the SHAs current.
+- Added **CodeQL** static analysis (`.github/workflows/codeql.yml`) on push, PR,
+  and a weekly schedule, with the `security-and-quality` query suite.
+- `ci.yml` now declares least-privilege `permissions: contents: read`.
+- Added `.npmrc` with `ignore-scripts=true` so dependency install/lifecycle
+  scripts never run (belt-and-suspenders; the tree has none today).
+- Added an ESLint (`eslint-plugin-security`) CI gate. eslint and the plugin are
+  **not** project dependencies — the lint job installs them ephemerally at
+  pinned versions (`--no-save`), so the runtime tree stays at one dependency and
+  the published package is unchanged. Config lives in `eslint.config.js`.
+- Added a **TruffleHog** secret-scan job (PR-only, `--only-verified`) that
+  *validates* findings against provider APIs, adding a live-credential check on
+  top of GitHub's native secret scanning + push protection.
+
 ### Docs
 
 - Restored concrete **OpenClaw** registration steps (the `mcp add` / `mcp probe`

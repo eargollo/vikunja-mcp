@@ -5,17 +5,26 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: these jobs only read the repo. The dependency-review job
+# needs read access to the contents/dependency graph; nothing here writes.
+permissions:
+  contents: read
+
 jobs:
   unit:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Fail the build on a known-vulnerable production dependency. --omit=dev
+      # scopes it to what actually ships; devDeps and tooling don't gate here.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - name: No console.log in server sources
         run: |
           if grep -n 'console\.log' index.js lib.js tools.js api.js; then
@@ -27,12 +36,66 @@ jobs:
       # coverage drops below the thresholds in the test:coverage script.
       - run: npm run test:coverage
 
+  lint:
+    name: Lint (eslint-plugin-security)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      # eslint + eslint-plugin-security are deliberately NOT project deps (keeps
+      # the tree to one runtime dep, no devDeps). Install them ephemerally, at
+      # pinned versions, without touching package.json or the lockfile. .npmrc
+      # (ignore-scripts) applies here too, so nothing runs install hooks.
+      - name: Run ESLint (ephemeral, pinned)
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund \
+            eslint@10.6.0 eslint-plugin-security@4.0.1
+          npx --no-install eslint --max-warnings 0 index.js api.js lib.js tools.js
+
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    # PR-only: this action diffs the PR's dependency changes against the base
+    # branch, so it has nothing to compare on a push.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+
+  secret-scan:
+    name: Secret scan (TruffleHog)
+    runs-on: ubuntu-latest
+    # PR-only, like dependency-review: scans the PR's commit range. Pushes to
+    # main go through required PRs (branch ruleset) and GitHub's own push
+    # protection, so scanning here covers the meaningful path without the
+    # base==head edge cases TruffleHog hits on some push events.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0 # need both base and head commits to diff the range
+      # TruffleHog *validates* findings — it calls the provider API to confirm a
+      # secret is live — so --only-verified fails the build solely on a
+      # confirmed-active credential, layering validation over GitHub's native
+      # detection + push protection.
+      - name: Scan for verified secrets
+        uses: trufflesecurity/trufflehog@00155c9dc586f34d189adc83d3ac2698c2ec551f # v3.95.8
+        with:
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          extra_args: --only-verified
+
   e2e:
     name: End-to-end (live Vikunja)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
