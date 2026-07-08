@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: these jobs only read the repo. The dependency-review job
+# needs read access to the contents/dependency graph; nothing here writes.
+permissions:
+  contents: read
+
 jobs:
   unit:
     name: Unit tests

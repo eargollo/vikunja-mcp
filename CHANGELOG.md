@@ -16,6 +16,11 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 - Pinned all GitHub Actions to full commit SHAs (with version comments) instead
   of floating `@v4`/`@v2` tags, closing the mutable-tag risk on the publish
   pipeline. Dependabot keeps the SHAs current.
+- Added **CodeQL** static analysis (`.github/workflows/codeql.yml`) on push, PR,
+  and a weekly schedule, with the `security-and-quality` query suite.
+- `ci.yml` now declares least-privilege `permissions: contents: read`.
+- Added `.npmrc` with `ignore-scripts=true` so dependency install/lifecycle
+  scripts never run (belt-and-suspenders; the tree has none today).
 
 ### Docs
 
