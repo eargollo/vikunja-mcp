@@ -5,6 +5,18 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Unreleased
 
+### CI / tooling
+
+- Added continuous supply-chain security: CI now gates on `npm audit --omit=dev
+  --audit-level=high` and an `actions/dependency-review-action` check on PRs, so
+  a newly-disclosed CVE in the dependency tree fails the build instead of
+  shipping silently.
+- Added `.github/dependabot.yml` for the `npm` and `github-actions` ecosystems
+  (weekly bumps, grouped; security updates open on their own).
+- Pinned all GitHub Actions to full commit SHAs (with version comments) instead
+  of floating `@v4`/`@v2` tags, closing the mutable-tag risk on the publish
+  pipeline. Dependabot keeps the SHAs current.
+
 ### Docs
 
 - Restored concrete **OpenClaw** registration steps (the `mcp add` / `mcp probe`

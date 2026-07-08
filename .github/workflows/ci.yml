@@ -10,12 +10,16 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Fail the build on a known-vulnerable production dependency. --omit=dev
+      # scopes it to what actually ships; devDeps and tooling don't gate here.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - name: No console.log in server sources
         run: |
           if grep -n 'console\.log' index.js lib.js tools.js api.js; then
@@ -27,12 +31,25 @@ jobs:
       # coverage drops below the thresholds in the test:coverage script.
       - run: npm run test:coverage
 
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    # PR-only: this action diffs the PR's dependency changes against the base
+    # branch, so it has nothing to compare on a push.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+
   e2e:
     name: End-to-end (live Vikunja)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
