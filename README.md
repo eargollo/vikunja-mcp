@@ -2,6 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@eargollo/vikunja-mcp)](https://www.npmjs.com/package/@eargollo/vikunja-mcp)
 [![CI](https://github.com/eargollo/vikunja-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/eargollo/vikunja-mcp/actions/workflows/ci.yml)
+[![coverage](https://img.shields.io/badge/coverage-100%25_lines_%7C_90%25%2B_branches-brightgreen)](https://github.com/eargollo/vikunja-mcp/actions/workflows/ci.yml)
 [![node](https://img.shields.io/node/v/@eargollo/vikunja-mcp)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/@eargollo/vikunja-mcp)](LICENSE)
 
@@ -292,12 +293,18 @@ CLI but the same shape: a command (`node` or `npx`), args, and the two env vars.
 ## Tests
 
 Unit tests cover the pure helpers in `lib.js` (validation, query building,
-pagination shaping). They need nothing but Node 20+ — no Docker, no network:
+pagination shaping) and every tool handler in `tools.js` with an injected
+`api()` — happy paths, input validation, and the empty/malformed-response
+guards — so no server or network is needed. They run on Node 20+ alone:
 
 ```bash
 npm test               # runs test/*.test.js; e2e self-skips when no Vikunja is configured
 npm run test:coverage  # same, with Node's built-in coverage report (no extra deps)
 ```
+
+`test:coverage` is what CI runs, and it fails the build if coverage falls below
+100% lines / 90% branches / 100% functions — the guarantee the coverage badge
+above reflects. No coverage service or extra dependency is involved.
 
 End-to-end tests drive the real MCP server over stdio against a live Vikunja.
 The compose file pins **Vikunja `2.3.0`** (bump deliberately, not `:latest`, so

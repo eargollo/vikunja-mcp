@@ -22,6 +22,7 @@ import {
   MAX_UPLOAD_BYTES,
   toolDisplayTitle,
   requireTeamId,
+  requireUsername,
   teamDetail,
   caldavBaseFromApiUrl,
   requirePositiveIntIdArray,
@@ -647,6 +648,23 @@ test("toolDisplayTitle drops empty segments (no edge/doubled spaces)", () => {
 test("requireNodeMinVersion accepts the current runtime and rejects an impossible floor", () => {
   assert.doesNotThrow(() => requireNodeMinVersion(20));
   assert.throws(() => requireNodeMinVersion(999), /requires Node\.js >= 999/);
+});
+
+test("requireNodeMinVersion rejects a runtime missing the File API", () => {
+  // File is a global on Node >= 20; drop it to exercise the missing-API guard.
+  const original = globalThis.File;
+  delete globalThis.File;
+  try {
+    assert.throws(() => requireNodeMinVersion(20), /File API missing/);
+  } finally {
+    globalThis.File = original;
+  }
+});
+
+test("requireUsername trims a valid name and rejects empty/non-string input", () => {
+  assert.equal(requireUsername("  bob  "), "bob");
+  assert.throws(() => requireUsername("   "), /non-empty string/);
+  assert.throws(() => requireUsername(42), /non-empty string/);
 });
 
 test("caldavBaseFromApiUrl derives the /dav origin from the API base", () => {
