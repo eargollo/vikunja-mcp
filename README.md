@@ -193,18 +193,22 @@ Invalid input (bad `project_id`, empty `title`, unknown tool) comes back as an M
 
 ## Scope & gaps
 
-The goal is the **most common** Vikunja v1 operations agents need, added TDD-style
-(unit + e2e) — not a complete mirror of every endpoint. The [Tools](#tools) table
-above is the authoritative, per-tool coverage list; by area that spans Projects ·
+The goal is **full coverage of the Vikunja v1 API**, every tool added TDD-style
+(unit + e2e). The handful of surfaces left out are excluded because they **don't
+make sense as agent tools** or would undercut the security posture — not for lack
+of reach (see below). The [Tools](#tools) table above is the authoritative,
+per-tool coverage list; by area that spans Projects ·
 Tasks (detail, filter/sort, bulk) · Labels · Assignees · Task comments · Task
 relations · Attachments (base64) · Kanban buckets · Teams & members · Project
 sharing (user/team/link) · Saved filters · Subscriptions & notifications · Current
 user, API tokens & CalDAV · Webhooks.
 
-**Intentional gaps:** no CalDAV sync itself (that uses `/dav`, not these tools), no
-arbitrary `/routes` proxy, no admin endpoints, and no user-level webhooks (project
-webhooks only). Tool results carry MCP `structuredContent`, but no declared
-`outputSchema` yet.
+**Out of scope, by design:** CalDAV *sync* (that's the `/dav` WebDAV protocol, not a
+REST call an agent makes), an arbitrary `/routes` proxy (a generic passthrough would
+defeat the point of scoped, validated tools), server **admin** endpoints (privileged
+operations an agent has no business running), and **user-level** webhooks (project
+webhooks only, to keep the surface narrow). Tool results carry MCP `structuredContent`,
+but no declared `outputSchema` yet.
 
 See [CHANGELOG.md](CHANGELOG.md) for recent additions and
 [#21](https://github.com/eargollo/vikunja-mcp/issues/21) for the roadmap.
