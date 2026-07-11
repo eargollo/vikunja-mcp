@@ -1,7 +1,7 @@
 {
   "name": "@eargollo/vikunja-mcp",
   "version": "1.1.1",
-  "description": "Minimal, self-owned MCP server for Vikunja — one dependency, scoped read+additive tools.",
+  "description": "Security-first MCP server for Vikunja — full API coverage, read-only by default with opt-in write/delete, and just one dependency (the official MCP SDK).",
   "type": "module",
   "bin": {
     "vikunja-mcp": "index.js"
