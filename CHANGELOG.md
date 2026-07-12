@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Version bumps happen at
 release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
-## Unreleased
+## 1.1.2 - 2026-07-11
 
 ### CI / tooling
 
@@ -28,6 +28,9 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 - Added a **TruffleHog** secret-scan job (PR-only, `--only-verified`) that
   *validates* findings against provider APIs, adding a live-credential check on
   top of GitHub's native secret scanning + push protection.
+- Bumped the pinned GitHub Actions to current majors: `actions/checkout` v7,
+  `actions/dependency-review-action` v5, `softprops/action-gh-release` v3, and
+  `github/codeql-action` (init + analyze, kept in lockstep) v4.37.0.
 
 ### Docs
 
@@ -35,6 +38,22 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
   commands, source + npm modes), which the earlier gateway-generalization pass
   had reduced to a `<gateway-cli>` placeholder — using neutral placeholders, no
   private host/paths.
+- Reframed the npm description and README **Scope & gaps** as *security-first,
+  full API coverage*: the description now leads with the differentiators
+  (security-first, full API coverage, read-only by default with opt-in
+  write/delete, and one dependency — the official MCP SDK), and the Scope section
+  lists the deliberately out-of-scope surfaces (CalDAV sync, `/routes` proxy,
+  admin endpoints, user-level webhooks) with the reason for each. Added a
+  coverage badge.
+
+### Tests
+
+- Added `test/tools-guards.test.js` — negative-path coverage for every tool's
+  error guards (empty/malformed Vikunja responses and pre-network input
+  validation), plus the `File`-API and `requireUsername` guards in `lib.js`.
+  Raised the CI-enforced coverage gate to **100% lines / 90% branches / 100%
+  functions** (up from 88 / 80 / 85); `tools.js` reached 100% line and 83% branch
+  coverage.
 
 ## 1.1.1 - 2026-07-07
 
