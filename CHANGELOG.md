@@ -31,6 +31,8 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 - Bumped the pinned GitHub Actions to current majors: `actions/checkout` v7,
   `actions/dependency-review-action` v5, `softprops/action-gh-release` v3, and
   `github/codeql-action` (init + analyze, kept in lockstep) v4.37.0.
+- Release workflow now runs on **Node 24** (was Node 20): `npm@latest` is 12.x and
+  refuses to install on Node 20, which broke the OIDC publish step.
 
 ### Docs
 

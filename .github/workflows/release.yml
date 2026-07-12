@@ -34,7 +34,7 @@ jobs:
       # default registry is npmjs.org already, and OIDC needs no token.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -43,8 +43,9 @@ jobs:
       - run: npm test
 
       # Publish via OIDC Trusted Publishing (no token, provenance attached).
-      # Needs npm >= 11.5.1; Node 20 ships npm 10.x, so upgrade first. Upgrade
-      # and publish in one step so the new npm is the one that runs publish.
+      # Needs npm >= 11.5.1. Node 24 ships npm 11.x, but upgrade to latest anyway
+      # so publish runs on current npm. (Node must be >= 22: npm@latest is 12.x
+      # now and refuses to install on Node 20 — hence node-version: 24 above.)
       # Do NOT add setup-node registry-url: it writes a placeholder-token
       # .npmrc that npm uses instead of OIDC (→ 404). Requires a Trusted
       # Publisher for this repo + release.yml configured on npmjs.com.
