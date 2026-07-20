@@ -95,58 +95,87 @@ const filterSortSchema = {
 // Read + additive only. Add tools here deliberately; give each a `tier` so the
 // gating in index.js can keep write/delete off by default.
 export function buildTools({ api, base }) {
-  // Vikunja's project update (POST /projects/{id}) requires `title` and behaves
-  // like a full replace — omitted fields can be zeroed. So fetch the current
-  // project and send every editable field back, overriding only what changed.
-  // `??` merges safely: it keeps falsy-but-valid changes (is_archived=false,
-  // parent=0, description="") and only falls back to current on undefined.
+  // Vikunja's POST /{entity}/{id} update endpoints (project, filter, task, label)
+  // are full-model replaces: the stored row is overwritten by the request body,
+  // so any field the body omits is reset to its zero value. They all need the
+  // same read-modify-write — GET current, rebuild the full body over it, POST it
+  // back — so mergedUpdate owns that skeleton (the GET path, the empty-response
+  // guards, the reshape) and each caller supplies only `buildBody(current)`.
+  // (bucket/webhook need a list-then-find to resolve the current row and keep
+  // their own inline read-modify-write below.)
   //
-  // identifier/hex_color/is_favorite aren't settable via this server; they're
-  // carried through unchanged purely so the full-replace POST doesn't clear
-  // them. This is a read-modify-write, so a concurrent edit between the GET and
-  // the POST is lost (no optimistic concurrency in the API) — accepted for a
-  // single-user MCP.
-  const updateProjectMerged = async (id, changes) => {
-    const { data: current } = await api("GET", `/projects/${id}`);
+  // Read-modify-write means a concurrent edit between the GET and the POST is
+  // lost (no optimistic concurrency in the API) — accepted for a single-user MCP.
+  const mergedUpdate = async ({ path, noun, buildBody, shape }) => {
+    const { data: current } = await api("GET", path);
     if (!current || current.id == null) {
-      throw new Error("Vikunja returned no project");
+      throw new Error(`Vikunja returned no ${noun}`);
     }
-    const body = {
-      title: changes.title ?? current.title,
-      description: changes.description ?? current.description ?? "",
-      identifier: current.identifier ?? "",
-      hex_color: current.hex_color ?? "",
-      parent_project_id: changes.parent_project_id ?? current.parent_project_id ?? 0,
-      is_archived: changes.is_archived ?? current.is_archived ?? false,
-      is_favorite: current.is_favorite ?? false,
-    };
-    const { data: project } = await api("POST", `/projects/${id}`, body);
-    if (!project || project.id == null) {
-      throw new Error("Vikunja returned an empty project response");
+    const { data: updated } = await api("POST", path, buildBody(current));
+    if (!updated || updated.id == null) {
+      throw new Error(`Vikunja returned an empty ${noun} response`);
     }
-    return projectDetail(project);
+    return shape(updated);
   };
 
-  // Saved-filter update, like project update, requires a full body (POST /filters/{id}
-  // 412s on a partial). Fetch current, override only what changed, preserving
-  // the rest of the nested filters object (s/sort_by/order_by/include_nulls).
-  const updateSavedFilterMerged = async (id, changes) => {
-    const { data: current } = await api("GET", `/filters/${id}`);
-    if (!current || current.id == null) {
-      throw new Error("Vikunja returned no saved filter");
-    }
-    const body = {
-      title: changes.title ?? current.title,
-      description: changes.description ?? current.description ?? "",
-      filters: { ...(current.filters ?? {}), filter: changes.filter ?? current.filters?.filter ?? "" },
-      is_favorite: current.is_favorite ?? false,
-    };
-    const { data: updated } = await api("POST", `/filters/${id}`, body);
-    if (!updated || updated.id == null) {
-      throw new Error("Vikunja returned an empty saved filter response");
-    }
-    return savedFilterDetail(updated);
-  };
+  // Explicit-whitelist body: send every editable field back, overriding only
+  // what changed. `??` keeps falsy-but-valid changes (is_archived=false,
+  // parent=0, description="") and only falls back to current on undefined.
+  // identifier/hex_color/is_favorite aren't settable via this server; they ride
+  // along unchanged purely so the full-replace POST doesn't clear them.
+  const updateProjectMerged = (id, changes) =>
+    mergedUpdate({
+      path: `/projects/${id}`,
+      noun: "project",
+      shape: projectDetail,
+      buildBody: (current) => ({
+        title: changes.title ?? current.title,
+        description: changes.description ?? current.description ?? "",
+        identifier: current.identifier ?? "",
+        hex_color: current.hex_color ?? "",
+        parent_project_id: changes.parent_project_id ?? current.parent_project_id ?? 0,
+        is_archived: changes.is_archived ?? current.is_archived ?? false,
+        is_favorite: current.is_favorite ?? false,
+      }),
+    });
+
+  // Preserve the rest of the nested filters object (s/sort_by/order_by/include_nulls),
+  // overriding only the `filter` string.
+  const updateSavedFilterMerged = (id, changes) =>
+    mergedUpdate({
+      path: `/filters/${id}`,
+      noun: "saved filter",
+      shape: savedFilterDetail,
+      buildBody: (current) => ({
+        title: changes.title ?? current.title,
+        description: changes.description ?? current.description ?? "",
+        filters: { ...(current.filters ?? {}), filter: changes.filter ?? current.filters?.filter ?? "" },
+        is_favorite: current.is_favorite ?? false,
+      }),
+    });
+
+  // Task deliberately diverges from its whitelist siblings: it spreads the whole
+  // current task and overrides only what changed. Vikunja force-zeroes a dozen
+  // task columns on a partial POST (due_date, priority, start/end_date,
+  // percent_done, hex_color, repeat_*, is_favorite, cover_image_attachment_id,
+  // ... — see the "Mergo does ignore nil values" block in its task Update), and
+  // enumerating all of them is the omission a whitelist is prone to — the very
+  // bug this guards against. Spreading preserves them by construction. Tradeoff:
+  // read-only/nested fields from the GET ride along in the POST, which Vikunja
+  // ignores on task update.
+  const updateTaskMerged = (id, changes) =>
+    mergedUpdate({
+      path: `/tasks/${id}`,
+      noun: "task",
+      shape: taskDetail,
+      buildBody: (current) => {
+        const body = { ...current };
+        for (const [key, value] of Object.entries(changes)) {
+          if (value !== undefined) body[key] = value;
+        }
+        return body;
+      },
+    });
 
   // Buckets live under a project's kanban view. Resolve it (the first kanban
   // view, if a project somehow has several) so bucket tools take a project_id —
@@ -318,24 +347,20 @@ export function buildTools({ api, base }) {
       },
       run: async ({ task_id, title, description, done, due_date, priority }) => {
         const id = requireTaskId(task_id);
-        const body = {};
-        if (title !== undefined) body.title = requireTitle(title);
+        const changes = {};
+        if (title !== undefined) changes.title = requireTitle(title);
         const desc = optionalDescription(description);
-        if (desc !== undefined) body.description = desc;
+        if (desc !== undefined) changes.description = desc;
         const doneVal = optionalBoolean(done, "done");
-        if (doneVal !== undefined) body.done = doneVal;
+        if (doneVal !== undefined) changes.done = doneVal;
         const due = optionalDueDate(due_date);
-        if (due !== undefined) body.due_date = due;
+        if (due !== undefined) changes.due_date = due;
         const prio = optionalPriority(priority);
-        if (prio !== undefined) body.priority = prio;
-        if (Object.keys(body).length === 0) {
+        if (prio !== undefined) changes.priority = prio;
+        if (Object.keys(changes).length === 0) {
           throw new Error("update_task: no fields to update");
         }
-        const { data: task } = await api("POST", `/tasks/${id}`, body);
-        if (!task || task.id == null) {
-          throw new Error("Vikunja returned an empty task response");
-        }
-        return taskDetail(task);
+        return updateTaskMerged(id, changes);
       },
     },
     {
@@ -354,11 +379,7 @@ export function buildTools({ api, base }) {
       run: async ({ task_id, done }) => {
         const id = requireTaskId(task_id);
         const doneVal = done === undefined ? true : optionalBoolean(done, "done");
-        const { data: task } = await api("POST", `/tasks/${id}`, { done: doneVal });
-        if (!task || task.id == null) {
-          throw new Error("Vikunja returned an empty task response");
-        }
-        return taskDetail(task);
+        return updateTaskMerged(id, { done: doneVal });
       },
     },
     {
@@ -552,20 +573,22 @@ export function buildTools({ api, base }) {
         if (title === undefined && hex_color === undefined) {
           throw new Error("update_label: no fields to update");
         }
-        const { data: current } = await api("GET", `/labels/${lid}`);
-        if (!current || current.id == null) {
-          throw new Error("Vikunja returned no label");
-        }
-        const body = {
-          title: title !== undefined ? requireTitle(title) : current.title,
-          hex_color:
-            hex_color !== undefined ? (optionalHexColor(hex_color) ?? "") : (current.hex_color ?? ""),
-        };
-        const { data: label } = await api("POST", `/labels/${lid}`, body);
-        if (!label || label.id == null) {
-          throw new Error("Vikunja returned an empty label response");
-        }
-        return labelDetail(label);
+        // Label.Update is a full replace over an explicit Cols("title",
+        // "description", "hex_color") set, so any field we omit is written as
+        // its zero value. Carry description through unchanged — this server
+        // doesn't expose it, but omitting it from the body would wipe a
+        // description set elsewhere.
+        return mergedUpdate({
+          path: `/labels/${lid}`,
+          noun: "label",
+          shape: labelDetail,
+          buildBody: (current) => ({
+            title: title !== undefined ? requireTitle(title) : current.title,
+            description: current.description ?? "",
+            hex_color:
+              hex_color !== undefined ? (optionalHexColor(hex_color) ?? "") : (current.hex_color ?? ""),
+          }),
+        });
       },
     },
     {
@@ -1193,68 +1216,82 @@ export function buildTools({ api, base }) {
     {
       name: "remove_team_member",
       tier: "delete",
-      description: "Remove a user from a team by user id.",
+      // Vikunja keys this route on the username, not a numeric id: it is
+      // DELETE /teams/{id}/members/{username} and the handler resolves the
+      // member via GetUserByUsername. The `type: integer` in the swagger param
+      // is a copy-paste artifact — a numeric id would be looked up as a literal
+      // username and 404. Same shape as add_team_member.
+      description: "Remove a user from a team by username (see get_team / search_users).",
       inputSchema: {
         type: "object",
         properties: {
           team_id: { type: "integer", description: "Vikunja team id" },
-          user_id: { type: "integer", description: "Vikunja user id" },
+          username: { type: "string", description: "Vikunja username to remove" },
         },
-        required: ["team_id", "user_id"],
+        required: ["team_id", "username"],
         additionalProperties: false,
       },
-      run: async ({ team_id, user_id }) => {
+      run: async ({ team_id, username }) => {
         const tid = requireTeamId(team_id);
-        const uid = requireUserId(user_id);
-        await api("DELETE", `/teams/${tid}/members/${uid}`);
-        return okResult({ team_id: tid, user_id: uid });
+        const uname = requireUsername(username);
+        await api("DELETE", `/teams/${tid}/members/${encodeURIComponent(uname)}`);
+        return okResult({ team_id: tid, username: uname });
       },
     },
     {
       name: "toggle_team_member_admin",
       tier: "write",
+      // Like remove_team_member, this route is keyed on the username:
+      // POST /teams/{id}/members/{username}/admin (route param :user binds to
+      // TeamMember.Username, and the handler resolves via GetUserByUsername).
+      // The swagger `userID path int` is the same copy-paste artifact — a
+      // numeric id is looked up as a literal username and 404s.
       description:
-        "Toggle a team member's admin status (Vikunja flips the current value). Call get_team afterward to read the resulting admin state.",
+        "Toggle a team member's admin status by username (see get_team / search_users). Vikunja flips the current value; call get_team afterward to read the resulting admin state.",
       inputSchema: {
         type: "object",
         properties: {
           team_id: { type: "integer", description: "Vikunja team id" },
-          user_id: { type: "integer", description: "Vikunja user id" },
+          username: { type: "string", description: "Vikunja username" },
         },
-        required: ["team_id", "user_id"],
+        required: ["team_id", "username"],
         additionalProperties: false,
       },
-      run: async ({ team_id, user_id }) => {
+      run: async ({ team_id, username }) => {
         const tid = requireTeamId(team_id);
-        const uid = requireUserId(user_id);
-        await api("POST", `/teams/${tid}/members/${uid}/admin`);
-        return okResult({ team_id: tid, user_id: uid });
+        const uname = requireUsername(username);
+        await api("POST", `/teams/${tid}/members/${encodeURIComponent(uname)}/admin`);
+        return okResult({ team_id: tid, username: uname });
       },
     },
     {
       name: "share_project_with_user",
       // Write-gated: grants access to a third party — not additive.
       tier: "write",
-      description: "Share a project with a user at a permission level (default read).",
+      // Vikunja keys this on the username: ProjectUser.UserID is json:"-" (never
+      // read from the body) and the create handler resolves the grantee via
+      // GetUserByUsername. Sending a numeric user_id is ignored and 404s ("user
+      // does not exist"). Same shape as add_team_member / remove_team_member.
+      description: "Share a project with a user by username (see search_users) at a permission level (default read).",
       inputSchema: {
         type: "object",
         properties: {
           project_id: { type: "integer", description: "Vikunja project id" },
-          user_id: { type: "integer", description: "Vikunja user id (see search_users)" },
+          username: { type: "string", description: "Vikunja username to share with (see search_users)" },
           ...permissionSchema,
         },
-        required: ["project_id", "user_id"],
+        required: ["project_id", "username"],
         additionalProperties: false,
       },
-      run: async ({ project_id, user_id, permission }) => {
+      run: async ({ project_id, username, permission }) => {
         const pid = requireProjectId(project_id);
-        const uid = requireUserId(user_id);
+        const uname = requireUsername(username);
         const perm = optionalPermission(permission) ?? 0;
         // Report the permission Vikunja actually set (falling back to requested)
         // so a silently-downgraded grant is visible — consistent across the
         // three share tools.
-        const { data } = await api("PUT", `/projects/${pid}/users`, { user_id: uid, permission: perm });
-        return okResult({ project_id: pid, user_id: uid, permission: data?.permission ?? perm });
+        const { data } = await api("PUT", `/projects/${pid}/users`, { username: uname, permission: perm });
+        return okResult({ project_id: pid, username: uname, permission: data?.permission ?? perm });
       },
     },
     {

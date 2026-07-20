@@ -3,6 +3,34 @@
 All notable changes to this project are documented here. Version bumps happen at
 release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
+## Unreleased
+
+### Fixed
+
+- `update_task` and `set_task_done` no longer wipe fields they don't touch.
+  `POST /tasks/{id}` is a full-model replace — Vikunja resets any field the body
+  omits to its zero value — so a partial update (e.g. changing only `priority`)
+  silently cleared the task's `due_date`, `description`, dates, etc. Both tools
+  now fetch the current task and send it back whole, overriding only the
+  caller-supplied fields (same read-modify-write pattern already used by
+  `update_project` / `update_saved_filter`).
+- `remove_team_member` and `toggle_team_member_admin` now take a `username`
+  instead of a numeric `user_id`. Both routes are keyed on the username
+  (`/teams/{id}/members/{username}` and `/teams/{id}/members/{username}/admin`),
+  which Vikunja resolves via `GetUserByUsername`; passing a numeric id was looked
+  up as a literal username and 404'd for any non-numeric account. The
+  `type: integer` in the OpenAPI spec for these path params is a copy-paste
+  artifact.
+- `share_project_with_user` now takes a `username` instead of a numeric
+  `user_id`. `ProjectUser.UserID` is `json:"-"` (never read from the body) and
+  Vikunja resolves the grantee via `GetUserByUsername`, so the previous
+  `user_id` body was ignored and every share attempt failed with a 404 "user
+  does not exist". The tool was effectively non-functional.
+- `update_label` no longer wipes a label's description. `Label.Update` writes
+  `title`/`description`/`hex_color` unconditionally, but the read-modify-write
+  merge only carried `title`/`hex_color`, so editing a label's title cleared a
+  description set elsewhere. The description is now preserved.
+
 ## 1.1.2 - 2026-07-11
 
 ### CI / tooling
