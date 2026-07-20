@@ -584,6 +584,32 @@ test("delete_task_comment is not callable without the delete flag", { skip }, as
   assert.match(result.content[0].text, /Unknown tool/);
 });
 
+test("update_task_comment edits an existing comment's text (live)", { skip }, async () => {
+  const wc = await getWriteClient(); // update_task_comment is write-tier
+  const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
+  const task = parse(
+    await wc.callTool({
+      name: "create_task",
+      arguments: { project_id: projects.items[0].id, title: `e2e cupd ${process.hrtime.bigint()}` },
+    }),
+  );
+  const added = parse(
+    await wc.callTool({ name: "add_task_comment", arguments: { task_id: task.id, comment: "original" } }),
+  );
+  const newText = `edited ${process.hrtime.bigint()}`;
+  const updated = parse(
+    await wc.callTool({
+      name: "update_task_comment",
+      arguments: { task_id: task.id, comment_id: added.id, comment: newText },
+    }),
+  );
+  assert.equal(updated.id, added.id);
+  assert.equal(updated.comment, newText, "returned comment reflects the edit");
+  // Confirm the edit persisted, not just the echoed response.
+  const list = parse(await wc.callTool({ name: "list_task_comments", arguments: { task_id: task.id } }));
+  assert.equal(list.items.find((c) => c.id === added.id)?.comment, newText, "edit persisted");
+});
+
 test("create_task_relation, list_task_relations, delete_task_relation round-trip", { skip }, async () => {
   const wc = await getWriteClient(); // delete_task_relation is delete-tier
   const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
@@ -700,6 +726,19 @@ test("update_bucket changes the limit while preserving the title (full-replace g
   );
   assert.equal(updated.limit, 5, "limit changed");
   assert.equal(updated.title, title, "title preserved across a limit-only update");
+});
+
+test("delete_bucket removes a kanban bucket (live)", { skip }, async () => {
+  const wc = await getWriteClient(); // delete_bucket is delete-tier
+  const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
+  const pid = projects.items[0].id;
+  const bucket = parse(
+    await wc.callTool({ name: "create_bucket", arguments: { project_id: pid, title: `e2e delbucket ${process.hrtime.bigint()}` } }),
+  );
+  const del = parse(await wc.callTool({ name: "delete_bucket", arguments: { project_id: pid, bucket_id: bucket.id } }));
+  assert.deepEqual(del, { ok: true, project_id: pid, view_id: bucket.view_id, bucket_id: bucket.id });
+  const after = parse(await wc.callTool({ name: "list_buckets", arguments: { project_id: pid } }));
+  assert.ok(!after.items.some((b) => b.id === bucket.id), "deleted bucket no longer listed");
 });
 
 test("move_task_to_bucket is not callable without the write flag", { skip }, async () => {
@@ -832,6 +871,29 @@ test("get_current_user returns the token owner", { skip }, async () => {
   assert.ok(user.username.length > 0);
 });
 
+test("caldav info / token create / delete round-trip (live)", { skip }, async () => {
+  const wc = await getWriteClient(); // create_caldav_token is write-tier, delete is delete-tier
+  const info = parse(await wc.callTool({ name: "get_caldav_info", arguments: {} }));
+  assert.ok(typeof info.dav_base_url === "string" && info.dav_base_url.endsWith("/dav"), "derives the /dav base url");
+  assert.ok(typeof info.username === "string" && info.username.length > 0, "reports the caldav username");
+  assert.ok(Array.isArray(info.tokens), "existing token metadata is a list");
+
+  const created = parse(await wc.callTool({ name: "create_caldav_token", arguments: {} }));
+  assert.ok(Number.isInteger(created.id));
+  assert.ok(typeof created.token === "string" && created.token.length > 0, "returns the secret once");
+
+  // The new token shows up in get_caldav_info — and its secret never does.
+  const after = parse(await wc.callTool({ name: "get_caldav_info", arguments: {} }));
+  const found = after.tokens.find((t) => t.id === created.id);
+  assert.ok(found, "created caldav token appears in the info listing");
+  assert.ok(!("token" in found), "the secret is never listed");
+
+  const del = parse(await wc.callTool({ name: "delete_caldav_token", arguments: { token_id: created.id } }));
+  assert.deepEqual(del, { ok: true, token_id: created.id });
+  const afterDel = parse(await wc.callTool({ name: "get_caldav_info", arguments: {} }));
+  assert.ok(!afterDel.tokens.some((t) => t.id === created.id), "deleted caldav token no longer listed");
+});
+
 test("create_api_token (write-gated) then list_api_tokens (secret returned once, never listed)", { skip }, async () => {
   const wc = await getWriteClient(); // create_api_token is write-tier (credential minting)
   const created = parse(
@@ -951,6 +1013,99 @@ test("share_project_with_user surfaces a clean error for a nonexistent user", { 
   });
   assert.ok(result.isError, "sharing with a nonexistent user should error, not crash");
   assert.match(result.content[0].text, /does not exist/i);
+});
+
+test("set_task_labels replaces the whole label set (bulk wire shape { labels: [{id}] })", { skip }, async () => {
+  const wc = await getWriteClient(); // set_task_labels is write-tier
+  const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
+  const task = parse(
+    await wc.callTool({
+      name: "create_task",
+      arguments: { project_id: projects.items[0].id, title: `e2e setlabels ${process.hrtime.bigint()}` },
+    }),
+  );
+  const mkLabel = async (n) =>
+    parse(await wc.callTool({ name: "create_label", arguments: { title: `e2e sl ${n} ${process.hrtime.bigint()}` } }));
+  const l1 = await mkLabel("1");
+  const l2 = await mkLabel("2");
+  const sorted = (ids) => [...ids].sort((a, b) => a - b);
+
+  // Set both labels at once — this is the only place the bulk body shape
+  // { labels: [{id}] } (not the singular { label_id } add_label_to_task uses)
+  // is exercised against real Vikunja.
+  const set = parse(
+    await wc.callTool({ name: "set_task_labels", arguments: { task_id: task.id, label_ids: [l1.id, l2.id] } }),
+  );
+  assert.deepEqual(set, { ok: true, task_id: task.id, label_ids: [l1.id, l2.id] });
+  let detail = parse(await wc.callTool({ name: "get_task", arguments: { task_id: task.id } }));
+  assert.deepEqual(sorted((detail.labels ?? []).map((l) => l.id)), sorted([l1.id, l2.id]), "both labels attached");
+
+  // Replace with just one — the unlisted label must be removed (full-replace,
+  // not additive; that semantic is the tool's documented contract).
+  parse(await wc.callTool({ name: "set_task_labels", arguments: { task_id: task.id, label_ids: [l2.id] } }));
+  detail = parse(await wc.callTool({ name: "get_task", arguments: { task_id: task.id } }));
+  assert.deepEqual((detail.labels ?? []).map((l) => l.id), [l2.id], "only the still-listed label remains");
+
+  // Empty set clears all labels.
+  parse(await wc.callTool({ name: "set_task_labels", arguments: { task_id: task.id, label_ids: [] } }));
+  detail = parse(await wc.callTool({ name: "get_task", arguments: { task_id: task.id } }));
+  assert.ok(!(detail.labels ?? []).length, "empty label_ids clears every label");
+});
+
+test("set_task_assignees replaces the whole assignee set (bulk wire shape { assignees: [{id}] })", { skip }, async () => {
+  const wc = await getWriteClient(); // set_task_assignees is write-tier
+  const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
+  const task = parse(
+    await wc.callTool({
+      name: "create_task",
+      arguments: { project_id: projects.items[0].id, title: `e2e setassignees ${process.hrtime.bigint()}` },
+    }),
+  );
+  const userId = 1; // token owner in the throwaway instance (see the assign_user round-trip)
+
+  // Exercises POST /tasks/{id}/assignees/bulk with { assignees: [{id}] }.
+  const set = parse(
+    await wc.callTool({ name: "set_task_assignees", arguments: { task_id: task.id, user_ids: [userId] } }),
+  );
+  assert.deepEqual(set, { ok: true, task_id: task.id, user_ids: [userId] });
+  let list = parse(await wc.callTool({ name: "list_task_assignees", arguments: { task_id: task.id } }));
+  assert.ok(list.items.some((u) => u.id === userId), "assignee set via bulk shows up");
+
+  // Empty set unassigns everyone.
+  parse(await wc.callTool({ name: "set_task_assignees", arguments: { task_id: task.id, user_ids: [] } }));
+  list = parse(await wc.callTool({ name: "list_task_assignees", arguments: { task_id: task.id } }));
+  assert.ok(!list.items.some((u) => u.id === userId), "empty user_ids unassigns everyone");
+});
+
+test("bulk_update_tasks applies one change set to multiple tasks (POST /tasks/bulk)", { skip }, async () => {
+  const wc = await getWriteClient(); // bulk_update_tasks is write-tier
+  const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
+  const pid = projects.items[0].id; // all task_ids must share a project
+  const mk = async (n) =>
+    parse(
+      await wc.callTool({
+        name: "create_task",
+        arguments: { project_id: pid, title: `e2e bulk ${n} ${process.hrtime.bigint()}` },
+      }),
+    );
+  const a = await mk("A");
+  const b = await mk("B");
+
+  // A single POST /tasks/bulk { task_ids, done, priority } must land on BOTH
+  // tasks — verifies the flat bulk body shape and that the change fans out.
+  const res = parse(
+    await wc.callTool({
+      name: "bulk_update_tasks",
+      arguments: { task_ids: [a.id, b.id], done: true, priority: 3 },
+    }),
+  );
+  assert.deepEqual(res, { ok: true, task_ids: [a.id, b.id] });
+
+  for (const id of [a.id, b.id]) {
+    const detail = parse(await wc.callTool({ name: "get_task", arguments: { task_id: id } }));
+    assert.equal(detail.done, true, `task ${id} marked done by the bulk update`);
+    assert.equal(detail.priority, 3, `task ${id} priority set by the bulk update`);
+  }
 });
 
 test("invalid project_id surfaces a tool error, not a crash", { skip }, async () => {

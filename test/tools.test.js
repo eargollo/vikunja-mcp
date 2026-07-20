@@ -1351,9 +1351,16 @@ test("bulk_update_tasks POSTs task_ids and changed fields to /tasks/bulk", async
   const res = await byName(buildTools({ api, base: TEST_BASE }), "bulk_update_tasks").run({
     task_ids: [1, 2],
     done: true,
+    priority: 3,
   });
   assert.deepEqual(res, { ok: true, task_ids: [1, 2] });
-  assert.deepEqual(posted[0][2], { task_ids: [1, 2], done: true });
+  // Vikunja wants { task_ids, fields, values }, not the changed fields flat —
+  // a flat body returns 200 but silently updates nothing.
+  assert.deepEqual(posted[0][2], {
+    task_ids: [1, 2],
+    fields: ["done", "priority"],
+    values: { done: true, priority: 3 },
+  });
 });
 
 test("bulk_update_tasks rejects task_ids with no updatable field, before the api call", async () => {

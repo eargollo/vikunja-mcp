@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. Version bumps happen at
 release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
+## Unreleased
+
+### Fixed
+
+- `bulk_update_tasks` now actually applies the update. Vikunja's
+  `POST /tasks/bulk` expects `{ task_ids, fields, values }` — `values` is a task
+  object and `fields` names which of its columns to write — but the tool sent the
+  changed fields flat (`{ task_ids, done, ... }`). Vikunja accepts that body with
+  HTTP 200 yet updates nothing, so the tool reported `{ ok: true }` while silently
+  doing nothing on every call. It now builds the `fields`/`values` pair, and a new
+  end-to-end test confirms the change persists across multiple tasks.
+
 ## 1.2.0 - 2026-07-20
 
 ### Fixed
