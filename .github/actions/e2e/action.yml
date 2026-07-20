@@ -1,0 +1,42 @@
+name: e2e
+description: >-
+  Boot a throwaway Vikunja container at the given version and run the MCP e2e
+  suite against it. Shared by ci.yml (pinned, required) and upstream-drift.yml
+  (:latest, non-gating) so the boot/bootstrap/teardown lives in one place. A
+  composite action rather than a reusable workflow on purpose: it keeps the
+  caller's job name (and therefore the required status-check name) stable.
+inputs:
+  vikunja-version:
+    description: Vikunja Docker image tag to run the suite against.
+    required: false
+    default: "2.3.0"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: 24
+        cache: npm
+    - run: npm ci
+      shell: bash
+    - name: Start Vikunja
+      shell: bash
+      run: npm run up
+      env:
+        # docker compose interpolates this into the image tag; unset locally it
+        # falls back to the pinned default in docker-compose.yml.
+        VIKUNJA_VERSION: ${{ inputs.vikunja-version }}
+    - name: Bootstrap test user and .env
+      shell: bash
+      run: npm run bootstrap
+    - name: Run end-to-end tests
+      shell: bash
+      run: npm run test:e2e
+    - name: Show Vikunja logs on failure
+      if: failure()
+      shell: bash
+      run: docker compose logs vikunja
+    - name: Stop Vikunja
+      if: always()
+      shell: bash
+      run: npm run down
