@@ -1745,22 +1745,25 @@ export function buildTools({ api, base }) {
       },
       run: async ({ task_ids, title, description, done, due_date, priority }) => {
         const ids = requirePositiveIntIdArray(task_ids, "task_ids");
-        // Collect the changed fields separately so the guard can't be defeated
-        // by a positional assumption about what else lives in the body.
-        const fields = {};
-        if (title !== undefined) fields.title = requireTitle(title);
+        // Vikunja's POST /tasks/bulk takes { task_ids, fields, values }: `values`
+        // is a task object and `fields` names which of its columns to write. A
+        // flat { task_ids, done, ... } body is still accepted (HTTP 200) but
+        // silently updates nothing — so build the fields/values pair explicitly.
+        const values = {};
+        if (title !== undefined) values.title = requireTitle(title);
         const desc = optionalDescription(description);
-        if (desc !== undefined) fields.description = desc;
+        if (desc !== undefined) values.description = desc;
         const doneVal = optionalBoolean(done, "done");
-        if (doneVal !== undefined) fields.done = doneVal;
+        if (doneVal !== undefined) values.done = doneVal;
         const due = optionalDueDate(due_date);
-        if (due !== undefined) fields.due_date = due;
+        if (due !== undefined) values.due_date = due;
         const prio = optionalPriority(priority);
-        if (prio !== undefined) fields.priority = prio;
-        if (Object.keys(fields).length === 0) {
+        if (prio !== undefined) values.priority = prio;
+        const fields = Object.keys(values);
+        if (fields.length === 0) {
           throw new Error("bulk_update_tasks: no fields to update");
         }
-        await api("POST", "/tasks/bulk", { task_ids: ids, ...fields });
+        await api("POST", "/tasks/bulk", { task_ids: ids, fields, values });
         return okResult({ task_ids: ids });
       },
     },
