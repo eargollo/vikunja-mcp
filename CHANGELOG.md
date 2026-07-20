@@ -15,6 +15,16 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
   doing nothing on every call. It now builds the `fields`/`values` pair, and a new
   end-to-end test confirms the change persists across multiple tasks.
 
+### CI / tooling
+
+- Added a **per-file branch-coverage floor** gate (`scripts/check-branch-coverage.mjs`,
+  run in CI as `npm run test:coverage:floors`). Node's `--test-coverage-branches`
+  threshold is global, so a low-branch file could decay while hiding behind the
+  well-covered pure helpers as long as the weighted average cleared the bar. The
+  new gate enforces a minimum branch coverage on each source file individually,
+  using the exact percentage Node reports, and fails the build (with a
+  ratchet-up policy) if any file regresses below its floor.
+
 ## 1.2.0 - 2026-07-20
 
 ### Fixed
