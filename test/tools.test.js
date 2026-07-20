@@ -489,6 +489,59 @@ test("share tools reject an invalid permission before calling the api", async ()
   assert.equal(called, false);
 });
 
+// The three share tools report `data?.permission ?? perm` — the permission
+// Vikunja actually set, falling back to the requested one only when the server
+// doesn't echo it. That exists so a silent server-side downgrade (grant less
+// than asked) is visible to the caller. These lock that in: without them,
+// replacing the expression with a plain `perm` passes every other test.
+test("share_project_with_user reports the granted permission, not the requested one (downgrade visible)", async () => {
+  const api = async (method, path, body) => {
+    assert.deepEqual([method, path], ["PUT", "/projects/4/users"]);
+    assert.equal(body.permission, 1, "requested read+write");
+    return { data: { username: body.username, permission: 0 }, headers: headers() }; // server grants only read
+  };
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "share_project_with_user").run({ project_id: 4, username: "bob", permission: 1 });
+  assert.deepEqual(res, { ok: true, project_id: 4, username: "bob", permission: 0 });
+});
+
+test("share_project_with_user falls back to the requested permission when Vikunja omits it", async () => {
+  const api = async () => ({ data: { username: "bob" }, headers: headers() }); // no permission echoed
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "share_project_with_user").run({ project_id: 4, username: "bob", permission: 2 });
+  assert.equal(res.permission, 2);
+});
+
+test("share_project_with_team reports the granted permission, not the requested one (downgrade visible)", async () => {
+  const api = async (method, path, body) => {
+    assert.deepEqual([method, path], ["PUT", "/projects/4/teams"]);
+    assert.equal(body.permission, 2, "requested admin");
+    return { data: { team_id: body.team_id, permission: 1 }, headers: headers() }; // server grants read+write
+  };
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "share_project_with_team").run({ project_id: 4, team_id: 2, permission: 2 });
+  assert.deepEqual(res, { ok: true, project_id: 4, team_id: 2, permission: 1 });
+});
+
+test("share_project_with_team falls back to the requested permission when Vikunja omits it", async () => {
+  const api = async () => ({ data: { team_id: 2 }, headers: headers() }); // no permission echoed
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "share_project_with_team").run({ project_id: 4, team_id: 2, permission: 1 });
+  assert.equal(res.permission, 1);
+});
+
+test("create_link_share reports the granted permission, not the requested one (downgrade visible)", async () => {
+  const api = async (method, path, body) => {
+    assert.deepEqual([method, path], ["PUT", "/projects/4/shares"]);
+    assert.equal(body.permission, 2, "requested admin");
+    return { data: { id: 1, hash: "abc123", permission: 0 }, headers: headers() }; // server grants only read
+  };
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_link_share").run({ project_id: 4, permission: 2 });
+  assert.deepEqual(res, { project_id: 4, hash: "abc123", permission: 0 });
+});
+
+test("create_link_share falls back to the requested permission when Vikunja omits it", async () => {
+  const api = async () => ({ data: { id: 1, hash: "abc123" }, headers: headers() }); // no permission echoed
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "create_link_share").run({ project_id: 4, permission: 1 });
+  assert.equal(res.permission, 1);
+});
+
 // Buckets live under a project's kanban view; the tools auto-resolve it.
 function kanbanApi(handler) {
   return async (method, path, body) => {
