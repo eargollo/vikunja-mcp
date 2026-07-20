@@ -35,6 +35,11 @@ jobs:
       # because VIKUNJA_URL / VIKUNJA_API_TOKEN aren't set. Fails the build if
       # coverage drops below the thresholds in the test:coverage script.
       - run: npm run test:coverage
+      # The thresholds above are global; this adds a per-file branch-coverage
+      # floor so a low-branch file (tools.js) can't decay while hiding behind the
+      # well-covered pure helpers. See scripts/check-branch-coverage.mjs.
+      - name: Enforce per-file branch-coverage floors
+        run: npm run test:coverage:floors
 
   lint:
     name: Lint (eslint-plugin-security)

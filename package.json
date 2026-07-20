@@ -40,6 +40,7 @@
     "start": "node index.js",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-lines=100 --test-coverage-branches=90 --test-coverage-functions=100",
+    "test:coverage:floors": "node scripts/check-branch-coverage.mjs",
     "test:e2e": "node --env-file=.env --test test/e2e.test.js",
     "up": "docker compose up -d",
     "down": "docker compose down",
