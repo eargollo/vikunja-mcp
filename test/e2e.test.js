@@ -28,6 +28,36 @@ function parse(result) {
   return JSON.parse(result.content[0].text);
 }
 
+// Authenticated Vikunja REST call for the few things the MCP has no tool for
+// (reading a share back, seeding/reading a label description). Keeps the base
+// URL + bearer header in one place so the raw wire format isn't re-derived per
+// test. Not for /register — that's unauthenticated (see registerUser).
+function vikunjaREST(path, init = {}) {
+  return fetch(`${process.env.VIKUNJA_URL}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${process.env.VIKUNJA_API_TOKEN}`,
+      "Content-Type": "application/json",
+      ...(init.headers ?? {}),
+    },
+  });
+}
+
+// Register a throwaway user straight against Vikunja's REST API — there is no
+// "register" MCP tool, and the team-member endpoints need a *second* member to
+// act on (bootstrap only creates one). Unauthenticated (public endpoint), so it
+// doesn't go through vikunjaREST. Idempotent: an already-registered user (400)
+// is fine on a re-run. Returns the username, which the team endpoints key on.
+async function registerUser(username) {
+  const res = await fetch(`${process.env.VIKUNJA_URL}/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, email: `${username}@example.com`, password: `${username}-password` }),
+  });
+  assert.ok(res.ok || res.status === 400, `register ${username} failed: ${res.status}`);
+  return username;
+}
+
 // Spawn a server + connected client with optional extra env (e.g. gating flags).
 function spawnClient(name, extraEnv = {}) {
   const transport = new StdioClientTransport({
@@ -273,41 +303,60 @@ test("create_task accepts optional description/due_date/priority", { skip }, asy
   assert.equal(Date.parse(detail.due_date), Date.parse("2026-08-01T09:00:00Z"));
 });
 
-test("update_task changes only the provided fields", { skip }, async () => {
+test("update_task changes the provided field and preserves the rest (full-replace guard)", { skip }, async () => {
   const wc = await getWriteClient();
   const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
+  // Seed a task that already carries a description AND a due_date...
   const created = parse(
     await wc.callTool({
       name: "create_task",
-      arguments: { project_id: projects.items[0].id, title: `e2e update ${process.hrtime.bigint()}` },
+      arguments: {
+        project_id: projects.items[0].id,
+        title: `e2e update ${process.hrtime.bigint()}`,
+        description: "keep me",
+        due_date: "2026-08-01T09:00:00Z",
+      },
     }),
   );
+  // ...then change ONLY the priority.
   const updated = parse(
-    await wc.callTool({
-      name: "update_task",
-      arguments: { task_id: created.id, priority: 5, description: "edited" },
-    }),
+    await wc.callTool({ name: "update_task", arguments: { task_id: created.id, priority: 5 } }),
   );
   assert.equal(updated.id, created.id);
-  assert.equal(updated.priority, 5);
-  assert.equal(updated.description, "edited");
+  assert.equal(updated.priority, 5, "the requested field changed");
+
+  // Re-fetch to assert *persisted* state. POST /tasks/{id} is a full-model
+  // replace, so a partial body used to zero every field the caller omitted —
+  // this is the regression guard for that bug. The old version of this test only
+  // asserted the fields it changed, which is exactly why it never caught it.
+  const detail = parse(await wc.callTool({ name: "get_task", arguments: { task_id: created.id } }));
+  assert.equal(detail.priority, 5);
+  assert.equal(detail.description, "keep me", "description survived a priority-only update");
+  assert.equal(Date.parse(detail.due_date), Date.parse("2026-08-01T09:00:00Z"), "due_date survived");
 });
 
-test("set_task_done marks a task done then reopens it", { skip }, async () => {
+test("set_task_done marks/reopens a task without wiping its other fields", { skip }, async () => {
   const wc = await getWriteClient();
   const projects = parse(await wc.callTool({ name: "list_projects", arguments: {} }));
   const created = parse(
     await wc.callTool({
       name: "create_task",
-      arguments: { project_id: projects.items[0].id, title: `e2e done ${process.hrtime.bigint()}` },
+      arguments: {
+        project_id: projects.items[0].id,
+        title: `e2e done ${process.hrtime.bigint()}`,
+        due_date: "2026-08-01T09:00:00Z",
+      },
     }),
   );
   const done = parse(await wc.callTool({ name: "set_task_done", arguments: { task_id: created.id } }));
   assert.equal(done.done, true);
+  // Same full-replace guard: toggling done must not clear the due_date.
+  assert.equal(Date.parse(done.due_date), Date.parse("2026-08-01T09:00:00Z"), "due_date survives set_task_done");
   const reopened = parse(
     await wc.callTool({ name: "set_task_done", arguments: { task_id: created.id, done: false } }),
   );
   assert.equal(reopened.done, false);
+  assert.equal(Date.parse(reopened.due_date), Date.parse("2026-08-01T09:00:00Z"), "due_date survives reopen");
 });
 
 test("update_task is not callable without the write flag", { skip }, async () => {
@@ -336,17 +385,26 @@ test("create_project then get_project round-trips (additive + read)", { skip }, 
   assert.equal(detail.is_archived, false);
 });
 
-test("update_project and archive_project change fields (write)", { skip }, async () => {
+test("update_project and archive_project change fields while preserving the rest (write)", { skip }, async () => {
   const wc = await getWriteClient();
+  // Seed a description so we can assert it survives a title-only update — this is
+  // the full-replace preservation guard that was missing from every merge tool.
   const created = parse(
-    await wc.callTool({ name: "create_project", arguments: { title: `e2e proj upd ${process.hrtime.bigint()}` } }),
+    await wc.callTool({
+      name: "create_project",
+      arguments: { title: `e2e proj upd ${process.hrtime.bigint()}`, description: "keep me" },
+    }),
   );
   const renamed = parse(
     await wc.callTool({ name: "update_project", arguments: { project_id: created.id, title: "Renamed E2E" } }),
   );
   assert.equal(renamed.title, "Renamed E2E");
+  assert.equal(renamed.description, "keep me", "description survived a title-only update");
+  // Archiving must also preserve the (now renamed) title and description.
   const archived = parse(await wc.callTool({ name: "archive_project", arguments: { project_id: created.id } }));
   assert.equal(archived.is_archived, true);
+  assert.equal(archived.title, "Renamed E2E", "title survived archive");
+  assert.equal(archived.description, "keep me", "description survived archive");
   const unarchived = parse(
     await wc.callTool({ name: "archive_project", arguments: { project_id: created.id, archived: false } }),
   );
@@ -423,6 +481,27 @@ test("create_label, list_labels, add/remove label round-trip", { skip }, async (
   assert.deepEqual(removed, { ok: true, task_id: task.id, label_id: label.id });
   const after = parse(await client.callTool({ name: "get_task", arguments: { task_id: task.id } }));
   assert.ok(!(after.labels ?? []).some((l) => l.id === label.id), "label detached");
+});
+
+test("update_label changes the title while preserving the description (full-replace guard)", { skip }, async () => {
+  const wc = await getWriteClient();
+  // The MCP neither sets nor returns a label description, but Label.Update writes
+  // Cols("title","description","hex_color") unconditionally — so a title-only
+  // update used to wipe a description set elsewhere. Seed + read the description
+  // straight from Vikunja's REST API to prove the merge carries it through.
+  const mk = await vikunjaREST("/labels", {
+    method: "PUT",
+    body: JSON.stringify({ title: `e2e label ${process.hrtime.bigint()}`, description: "keep me", hex_color: "00ff00" }),
+  });
+  const label = await mk.json();
+  assert.equal(label.description, "keep me", "seeded a label with a description");
+
+  // change only the title via the MCP tool
+  parse(await wc.callTool({ name: "update_label", arguments: { label_id: label.id, title: "Renamed label" } }));
+
+  const after = await (await vikunjaREST(`/labels/${label.id}`)).json();
+  assert.equal(after.title, "Renamed label", "title changed");
+  assert.equal(after.description, "keep me", "description survived a title-only update");
 });
 
 test("remove_label_from_task is not callable without the delete flag", { skip }, async () => {
@@ -608,6 +687,21 @@ test("list_buckets, create_bucket, move_task_to_bucket round-trip", { skip }, as
   assert.deepEqual(moved, { ok: true, project_id: pid, view_id: before.view_id, bucket_id: bucket.id, task_id: task.id });
 });
 
+test("update_bucket changes the limit while preserving the title (full-replace guard)", { skip }, async () => {
+  const wc = await getWriteClient();
+  const projects = parse(await client.callTool({ name: "list_projects", arguments: {} }));
+  const pid = projects.items[0].id;
+  const title = `e2e bucket ${process.hrtime.bigint()}`;
+  const bucket = parse(await wc.callTool({ name: "create_bucket", arguments: { project_id: pid, title } }));
+
+  // Change only the limit — the title must survive (POST bucket is a full replace).
+  const updated = parse(
+    await wc.callTool({ name: "update_bucket", arguments: { project_id: pid, bucket_id: bucket.id, limit: 5 } }),
+  );
+  assert.equal(updated.limit, 5, "limit changed");
+  assert.equal(updated.title, title, "title preserved across a limit-only update");
+});
+
 test("move_task_to_bucket is not callable without the write flag", { skip }, async () => {
   const result = await client.callTool({
     name: "move_task_to_bucket",
@@ -624,6 +718,40 @@ test("create_team then list_teams round-trips (additive + read)", { skip }, asyn
   assert.equal(team.name, name);
   const teams = parse(await client.callTool({ name: "list_teams", arguments: {} }));
   assert.ok(teams.items.some((t) => t.id === team.id), "created team appears in list_teams");
+});
+
+test("team member add / toggle-admin / remove round-trip (username-keyed endpoints)", { skip }, async () => {
+  const wc = await getWriteClient(); // toggle is write-tier, remove is delete-tier
+  // These three endpoints are keyed on the username, not a numeric id. This test
+  // needs a real second user, which is why the bug went uncaught: bootstrap only
+  // creates one user, so nothing here previously exercised remove/toggle-admin.
+  const member = await registerUser("mcpteammate");
+  const team = parse(
+    await client.callTool({ name: "create_team", arguments: { name: `e2e team ops ${process.hrtime.bigint()}` } }),
+  );
+
+  // add by username
+  const added = parse(
+    await client.callTool({ name: "add_team_member", arguments: { team_id: team.id, username: member } }),
+  );
+  assert.equal(added.username, member);
+  assert.equal(added.admin, false, "added as a regular member");
+  let detail = parse(await client.callTool({ name: "get_team", arguments: { team_id: team.id } }));
+  assert.ok(detail.members.some((m) => m.username === member), "member shows up on the team");
+
+  // toggle admin by username — a numeric id here would 404 (looked up as a
+  // literal username). Confirm the admin flag actually flipped server-side.
+  parse(await wc.callTool({ name: "toggle_team_member_admin", arguments: { team_id: team.id, username: member } }));
+  detail = parse(await client.callTool({ name: "get_team", arguments: { team_id: team.id } }));
+  assert.ok(detail.members.find((m) => m.username === member)?.admin, "member was promoted to admin");
+
+  // remove by username — same routing; a numeric id would 404.
+  const removed = parse(
+    await wc.callTool({ name: "remove_team_member", arguments: { team_id: team.id, username: member } }),
+  );
+  assert.deepEqual(removed, { ok: true, team_id: team.id, username: member });
+  detail = parse(await client.callTool({ name: "get_team", arguments: { team_id: team.id } }));
+  assert.ok(!detail.members.some((m) => m.username === member), "member removed from the team");
 });
 
 test("share_project_with_team and create_link_share succeed", { skip }, async () => {
@@ -667,6 +795,16 @@ test("create_webhook, list_webhooks, delete_webhook round-trip", { skip }, async
 
   const list = parse(await client.callTool({ name: "list_webhooks", arguments: { project_id: pid } }));
   assert.ok(list.items.some((w) => w.id === created.id), "webhook appears in list");
+
+  // update only the events — target_url must survive (POST webhook is a full replace).
+  const updated = parse(
+    await wc.callTool({
+      name: "update_webhook",
+      arguments: { project_id: pid, webhook_id: created.id, events: ["task.created", "task.updated"] },
+    }),
+  );
+  assert.deepEqual(updated.events, ["task.created", "task.updated"], "events changed");
+  assert.equal(updated.target_url, url, "target_url preserved across an events-only update");
 
   const del = parse(await wc.callTool({ name: "delete_webhook", arguments: { project_id: pid, webhook_id: created.id } }));
   assert.deepEqual(del, { ok: true, project_id: pid, webhook_id: created.id });
@@ -777,19 +915,42 @@ test("update_saved_filter is not callable without the write flag", { skip }, asy
   assert.match(result.content[0].text, /Unknown tool/);
 });
 
+test("share_project_with_user grants a real user access at the requested permission", { skip }, async () => {
+  const wc = await getWriteClient();
+  // Needs a real second user — the reason this had no positive coverage before,
+  // which is exactly how the user_id-vs-username bug hid. The old test only
+  // asserted isError, so it passed even though the tool always 404'd.
+  const grantee = await registerUser("mcpsharee");
+  const project = parse(
+    await client.callTool({ name: "create_project", arguments: { title: `e2e usershare ${process.hrtime.bigint()}` } }),
+  );
+  const shared = parse(
+    await wc.callTool({
+      name: "share_project_with_user",
+      arguments: { project_id: project.id, username: grantee, permission: 1 },
+    }),
+  );
+  assert.deepEqual(shared, { ok: true, project_id: project.id, username: grantee, permission: 1 });
+
+  // Confirm the grant landed server-side at the requested level (not silently
+  // downgraded), read straight from Vikunja's REST API.
+  const users = await (await vikunjaREST(`/projects/${project.id}/users`)).json();
+  const entry = users.find((u) => u.username === grantee);
+  assert.ok(entry, "grantee appears in the project's user shares");
+  assert.equal(entry.permission, 1, "granted at read+write, not silently downgraded to read");
+});
+
 test("share_project_with_user surfaces a clean error for a nonexistent user", { skip }, async () => {
   const wc = await getWriteClient();
-  // The throwaway instance has only the owner, and Vikunja won't let a project
-  // be shared with its own owner, so a positive round-trip is impossible here —
-  // the request-body/permission coverage lives in the unit test. This asserts
-  // the plumbing reaches Vikunja and errors cleanly. Don't "strengthen" it into
-  // a success assertion; it will fail on a single-user instance.
-  const project = parse(await client.callTool({ name: "create_project", arguments: { title: `e2e usershare ${process.hrtime.bigint()}` } }));
+  const project = parse(
+    await client.callTool({ name: "create_project", arguments: { title: `e2e usershare err ${process.hrtime.bigint()}` } }),
+  );
   const result = await wc.callTool({
     name: "share_project_with_user",
-    arguments: { project_id: project.id, user_id: 999999, permission: 1 },
+    arguments: { project_id: project.id, username: "definitely-not-a-real-user", permission: 1 },
   });
   assert.ok(result.isError, "sharing with a nonexistent user should error, not crash");
+  assert.match(result.content[0].text, /does not exist/i);
 });
 
 test("invalid project_id surfaces a tool error, not a crash", { skip }, async () => {

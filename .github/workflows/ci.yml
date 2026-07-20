@@ -90,25 +90,18 @@ jobs:
           head: ${{ github.event.pull_request.head.sha }}
           extra_args: --only-verified
 
+  # Required check: runs the shared e2e composite action against the pinned
+  # Vikunja version (docker-compose's default), so it stays reproducible. The
+  # job name is load-bearing — the branch ruleset requires this exact status
+  # check ("End-to-end (live Vikunja)"), so don't rename it without updating the
+  # ruleset. Drift against :latest is tracked out-of-band by upstream-drift.yml,
+  # which files an issue rather than gating PRs on a floating upstream tag.
   e2e:
     name: End-to-end (live Vikunja)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: ./.github/actions/e2e
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - name: Start Vikunja
-        run: npm run up
-      - name: Bootstrap test user and .env
-        run: npm run bootstrap
-      - name: Run end-to-end tests
-        run: npm run test:e2e
-      - name: Show Vikunja logs on failure
-        if: failure()
-        run: docker compose logs vikunja
-      - name: Stop Vikunja
-        if: always()
-        run: npm run down
+          vikunja-version: "2.3.0"

@@ -60,14 +60,30 @@ test("update_saved_filter throws when the merged POST returns an empty filter", 
   await assert.rejects(() => run("update_saved_filter", api)({ filter_id: 5, filter: "y" }), /empty saved filter response/);
 });
 
-test("update_task throws when the POST returns an empty task", async () => {
-  const r = run("update_task", reply("POST", "/tasks/7", null));
-  await assert.rejects(() => r({ task_id: 7, title: "X" }), /empty task response/);
+test("update_task throws when the current task GET is empty", async () => {
+  const r = run("update_task", reply("GET", "/tasks/7", null));
+  await assert.rejects(() => r({ task_id: 7, title: "X" }), /returned no task/);
 });
 
-test("set_task_done throws when the POST returns an empty task", async () => {
-  const r = run("set_task_done", reply("POST", "/tasks/7", null));
-  await assert.rejects(() => r({ task_id: 7 }), /empty task response/);
+test("update_task throws when the merged POST returns an empty task", async () => {
+  const api = router({
+    "GET /tasks/7": { id: 7, title: "Old" },
+    "POST /tasks/7": null,
+  });
+  await assert.rejects(() => run("update_task", api)({ task_id: 7, title: "X" }), /empty task response/);
+});
+
+test("set_task_done throws when the current task GET is empty", async () => {
+  const r = run("set_task_done", reply("GET", "/tasks/7", null));
+  await assert.rejects(() => r({ task_id: 7 }), /returned no task/);
+});
+
+test("set_task_done throws when the merged POST returns an empty task", async () => {
+  const api = router({
+    "GET /tasks/7": { id: 7, title: "Old" },
+    "POST /tasks/7": null,
+  });
+  await assert.rejects(() => run("set_task_done", api)({ task_id: 7 }), /empty task response/);
 });
 
 test("get_project throws when the GET is empty", async () => {

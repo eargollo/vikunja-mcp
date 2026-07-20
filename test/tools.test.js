@@ -435,20 +435,22 @@ test("create_team PUTs the name and returns id/name", async () => {
   assert.deepEqual(res, { id: 3, name: "Squad" });
 });
 
-test("share_project_with_user PUTs { user_id, permission } (default read)", async () => {
+test("share_project_with_user PUTs { username, permission } (default read)", async () => {
+  // The endpoint is keyed on username — ProjectUser.UserID is json:"-", so a
+  // numeric user_id in the body is ignored and 404s. Assert the wire shape.
   const seen = [];
   const api = async (method, path, body) => {
     seen.push([method, path, body]);
-    return { data: { user_id: body.user_id, permission: body.permission }, headers: headers() };
+    return { data: { username: body.username, permission: body.permission }, headers: headers() };
   };
   const tools = buildTools({ api, base: TEST_BASE });
-  const def = await byName(tools, "share_project_with_user").run({ project_id: 4, user_id: 9 });
-  assert.deepEqual(def, { ok: true, project_id: 4, user_id: 9, permission: 0 });
-  const rw = await byName(tools, "share_project_with_user").run({ project_id: 4, user_id: 9, permission: 1 });
+  const def = await byName(tools, "share_project_with_user").run({ project_id: 4, username: "bob" });
+  assert.deepEqual(def, { ok: true, project_id: 4, username: "bob", permission: 0 });
+  const rw = await byName(tools, "share_project_with_user").run({ project_id: 4, username: "bob", permission: 1 });
   assert.equal(rw.permission, 1);
   assert.deepEqual(seen, [
-    ["PUT", "/projects/4/users", { user_id: 9, permission: 0 }],
-    ["PUT", "/projects/4/users", { user_id: 9, permission: 1 }],
+    ["PUT", "/projects/4/users", { username: "bob", permission: 0 }],
+    ["PUT", "/projects/4/users", { username: "bob", permission: 1 }],
   ]);
 });
 
@@ -1215,14 +1217,39 @@ test("create_task includes optional description/due_date/priority in the body", 
   assert.equal(res.priority, 4);
 });
 
-test("update_task POSTs only the provided fields and returns the shaped detail", async () => {
+test("update_task fetch-merges: POSTs the full task with only the changed fields overridden", async () => {
+  const seen = [];
+  // POST /tasks/{id} is a full-model replace — Vikunja zeroes any field the body
+  // omits. So update_task must GET the current task and send it back whole,
+  // changing only what the caller asked for. Regression for the partial-body bug
+  // that silently wiped due_date/description on a priority-only update.
+  const current = {
+    id: 12,
+    title: "T",
+    description: "keep me",
+    done: false,
+    project_id: 1,
+    priority: 2,
+    due_date: "2026-08-01T00:00:00Z",
+    assignees: [{ id: 3, username: "bob" }],
+  };
   const api = async (method, path, body) => {
-    assert.equal(method, "POST");
-    assert.equal(path, "/tasks/12");
-    assert.deepEqual(body, { priority: 5, done: true });
-    return { data: { id: 12, title: "T", done: true, project_id: 1, priority: 5 }, headers: headers() };
+    seen.push([method, path, body]);
+    if (method === "GET") return { data: current, headers: headers() };
+    return { data: { ...body }, headers: headers() };
   };
   const res = await byName(buildTools({ api, base: TEST_BASE }), "update_task").run({ task_id: 12, priority: 5, done: true });
+  assert.deepEqual(seen[0], ["GET", "/tasks/12", undefined]);
+  const [method, path, body] = seen[1];
+  assert.equal(method, "POST");
+  assert.equal(path, "/tasks/12");
+  // Changed fields applied...
+  assert.equal(body.priority, 5);
+  assert.equal(body.done, true);
+  // ...and every untouched field preserved (the whole point of the merge).
+  assert.equal(body.description, "keep me");
+  assert.equal(body.due_date, "2026-08-01T00:00:00Z");
+  assert.deepEqual(body.assignees, [{ id: 3, username: "bob" }]);
   assert.equal(res.id, 12);
   assert.equal(res.done, true);
   assert.equal(res.priority, 5);
@@ -1256,9 +1283,13 @@ test("update_task validates task_id before touching the network", async () => {
 
 test("set_task_done defaults to done=true and can reopen with done=false", async () => {
   const seen = [];
+  // Same full-replace contract as update_task: fetch-merge so toggling done
+  // doesn't wipe the task's other fields.
+  const current = { id: 3, title: "T", done: false, project_id: 1, due_date: "2026-08-01T00:00:00Z" };
   const api = async (method, path, body) => {
     seen.push([method, path, body]);
-    return { data: { id: 3, title: "T", done: body.done, project_id: 1 }, headers: headers() };
+    if (method === "GET") return { data: current, headers: headers() };
+    return { data: { ...current, ...body }, headers: headers() };
   };
   const tools = buildTools({ api, base: TEST_BASE });
   const doneRes = await byName(tools, "set_task_done").run({ task_id: 3 });
@@ -1266,8 +1297,10 @@ test("set_task_done defaults to done=true and can reopen with done=false", async
   const openRes = await byName(tools, "set_task_done").run({ task_id: 3, done: false });
   assert.equal(openRes.done, false);
   assert.deepEqual(seen, [
-    ["POST", "/tasks/3", { done: true }],
-    ["POST", "/tasks/3", { done: false }],
+    ["GET", "/tasks/3", undefined],
+    ["POST", "/tasks/3", { ...current, done: true }],
+    ["GET", "/tasks/3", undefined],
+    ["POST", "/tasks/3", { ...current, done: false }],
   ]);
 });
 
@@ -1292,12 +1325,17 @@ test("create_task surfaces an empty Vikunja response as an error", async () => {
   );
 });
 
-test("update_label POSTs merged fields to /labels/{id}", async () => {
+test("update_label fetch-merges: preserves hex_color AND description when only the title changes", async () => {
+  // Label.Update writes Cols("title","description","hex_color") unconditionally,
+  // so the merged body must carry the fields we aren't changing or they're
+  // zeroed. Regression guard for the description getting wiped on a title edit.
   const api = async (method, path, body) => {
-    if (method === "GET") return { data: { id: 3, title: "Old", hex_color: "aabbcc" }, headers: headers() };
+    if (method === "GET") return { data: { id: 3, title: "Old", description: "keep me", hex_color: "aabbcc" }, headers: headers() };
     assert.equal(method, "POST");
     assert.equal(path, "/labels/3");
     assert.equal(body.title, "New");
+    assert.equal(body.description, "keep me", "description preserved across a title-only update");
+    assert.equal(body.hex_color, "aabbcc", "hex_color preserved");
     return { data: { id: 3, title: "New", hex_color: "aabbcc" }, headers: headers() };
   };
   const res = await byName(buildTools({ api, base: TEST_BASE }), "update_label").run({ label_id: 3, title: "New" });
@@ -1421,20 +1459,28 @@ test("add_team_member PUTs the username (+ optional admin) and returns the membe
   assert.deepEqual(res, { team_id: 4, id: 9, username: "bob", admin: true });
 });
 
-test("remove_team_member DELETEs /teams/{id}/members/{userId}", async () => {
+test("remove_team_member DELETEs /teams/{id}/members/{username} (route is keyed on username)", async () => {
   const api = async (m, p) => {
-    assert.deepEqual([m, p], ["DELETE", "/teams/4/members/9"]);
+    assert.deepEqual([m, p], ["DELETE", "/teams/4/members/bob"]);
     return { data: {}, headers: headers() };
   };
-  assert.deepEqual(await byName(build(api), "remove_team_member").run({ team_id: 4, user_id: 9 }), { ok: true, team_id: 4, user_id: 9 });
+  assert.deepEqual(await byName(build(api), "remove_team_member").run({ team_id: 4, username: "bob" }), { ok: true, team_id: 4, username: "bob" });
 });
 
-test("toggle_team_member_admin POSTs the admin toggle", async () => {
+test("remove_team_member url-encodes the username path segment", async () => {
   const api = async (m, p) => {
-    assert.deepEqual([m, p], ["POST", "/teams/4/members/9/admin"]);
+    assert.deepEqual([m, p], ["DELETE", "/teams/4/members/a%40b.com"]);
     return { data: {}, headers: headers() };
   };
-  assert.deepEqual(await byName(build(api), "toggle_team_member_admin").run({ team_id: 4, user_id: 9 }), { ok: true, team_id: 4, user_id: 9 });
+  await byName(build(api), "remove_team_member").run({ team_id: 4, username: "a@b.com" });
+});
+
+test("toggle_team_member_admin POSTs /teams/{id}/members/{username}/admin (route is keyed on username)", async () => {
+  const api = async (m, p) => {
+    assert.deepEqual([m, p], ["POST", "/teams/4/members/bob/admin"]);
+    return { data: {}, headers: headers() };
+  };
+  assert.deepEqual(await byName(build(api), "toggle_team_member_admin").run({ team_id: 4, username: "bob" }), { ok: true, team_id: 4, username: "bob" });
 });
 
 test("update_webhook fetch-merges, preserving target_url/events when only secret changes", async () => {

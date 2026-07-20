@@ -1,0 +1,62 @@
+name: Upstream drift (Vikunja latest)
+
+# Early warning for Vikunja wire-contract drift, WITHOUT gating PRs on a moving
+# upstream tag. Runs the shared e2e composite action against
+# vikunja/vikunja:latest on a schedule; on failure it opens (or bumps) a
+# tracking issue so the signal lands in the issue tracker rather than a
+# non-blocking CI check nobody watches. When it fires, investigate and — once
+# the suite passes against the new release — bump the pinned VIKUNJA_VERSION
+# default in docker-compose.yml.
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch: # allow manual runs
+
+# Read the repo, and write issues to file the drift report.
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    name: End-to-end (Vikunja latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/e2e
+        with:
+          vikunja-version: latest
+      # Turn a red scheduled run into something un-missable: a labelled issue,
+      # de-duped so a persistent break gets follow-up comments rather than a new
+      # issue every week.
+      - name: File or bump the drift issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }} # target the repo without extra config
+        run: |
+          set -euo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          title="Upstream drift: e2e fails against Vikunja :latest"
+          # Idempotent label so --label never fails on a fresh repo.
+          gh label create upstream-drift --color B60205 \
+            --description "e2e drift vs Vikunja :latest" --force >/dev/null 2>&1 || true
+          existing="$(gh issue list --label upstream-drift --state open \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" \
+              --body "Still failing as of $(date -u +%F). Run: $run_url"
+          else
+            # printf keeps the body flush regardless of YAML indentation.
+            body="$(printf '%s\n' \
+              'The end-to-end suite failed against `vikunja/vikunja:latest`.' \
+              '' \
+              'This usually means a newer Vikunja release changed a wire contract the MCP relies on (path params, full-replace bodies, response shapes).' \
+              '' \
+              "- Failing run: $run_url" \
+              '- Reproduce locally: `VIKUNJA_VERSION=latest npm run up && npm run bootstrap && npm run test:e2e`' \
+              '' \
+              'Once the suite passes against the new release, bump the pinned `VIKUNJA_VERSION` default in `docker-compose.yml` and close this issue.')"
+            gh issue create --label upstream-drift --title "$title" --body "$body"
+          fi
