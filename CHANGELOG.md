@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Version bumps happen at
 release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
-## Unreleased
+## 1.2.0 - 2026-07-20
 
 ### Fixed
 
@@ -30,6 +30,11 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
   `title`/`description`/`hex_color` unconditionally, but the read-modify-write
   merge only carried `title`/`hex_color`, so editing a label's title cleared a
   description set elsewhere. The description is now preserved.
+
+### CI / tooling
+
+- Bumped pinned GitHub Actions: `actions/setup-node` v7, `softprops/action-gh-release`
+  v3.0.2, and `trufflesecurity/trufflehog` v3.95.9 (Dependabot, SHA-pinned).
 
 ## 1.1.2 - 2026-07-11
 
