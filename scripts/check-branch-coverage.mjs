@@ -22,9 +22,15 @@ import path from "node:path";
 import process from "node:process";
 
 // Repo-relative source path -> minimum acceptable branch coverage (%).
+// index.js is the executable shell: its coverage is aggregated from the
+// subprocess tests in test/index.test.js (guards + a fake-config boot), while
+// server.js holds the extracted handler logic tested in-process. Both sit at
+// 100% today; the ratchet keeps them there.
 const FLOORS = {
   "api.js": 96,
+  "index.js": 100,
   "lib.js": 97,
+  "server.js": 100,
   "tools.js": 84,
 };
 const DEFAULT_FLOOR = 90;

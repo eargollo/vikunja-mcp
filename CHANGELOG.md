@@ -25,6 +25,27 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
   using the exact percentage Node reports, and fails the build (with a
   ratchet-up policy) if any file regresses below its floor.
 
+### Changed
+
+- Split the server assembly out of `index.js` into `server.js` (no behaviour
+  change). `index.js` was the shipped executable holding the tier-gating filter
+  and the `tools/list` / `tools/call` handlers — production logic that could
+  only be exercised by the env-gated e2e suite, so its startup guards had no test
+  at all. The config resolution and both request handlers now live in `server.js`
+  as plain functions (`resolveConfig`, `listToolsResult`, `runTool`,
+  `createServer`); `index.js` is a thin shell that guards the runtime, resolves
+  config, gates tools, and connects the stdio transport.
+
+### Tests
+
+- Added `test/server.test.js` (in-process unit tests for the extracted config
+  and handler logic, including the `tools/call` success path and annotation
+  mapping) and `test/index.test.js` (spawns the real binary to assert the
+  startup guards exit non-zero with a clear message, and drives it over stdio
+  with a fake URL/token — no Vikunja — to check tier gating and a call
+  round-trip). Both `index.js` and `server.js` now reach 100% line/branch
+  coverage and are enforced by the per-file floor gate.
+
 ## 1.2.0 - 2026-07-20
 
 ### Fixed

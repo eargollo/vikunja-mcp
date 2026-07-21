@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-// Minimal, self-owned MCP server for Vikunja.
+// Minimal, self-owned MCP server for Vikunja — the executable shell.
+//
+// All the logic with a branch to get wrong (config resolution, the tools/list
+// and tools/call handlers) lives in server.js, where it is unit-tested in-process.
+// This file only guards the runtime, reads the environment, gates tools by tier,
+// and connects the stdio transport.
 //
 // Trust posture (the whole point of this repo):
 //   - ONE direct dependency: the official @modelcontextprotocol/sdk. HTTP is
@@ -9,95 +14,31 @@
 //   - Every outbound request goes through makeApi() in api.js, so there is
 //     exactly one place that can talk to the network, and it only ever talks to
 //     VIKUNJA_URL with your token.
-//   - READ + ADDITIVE tools by default (list + create). Write (update, access-
-//     granting, egress) and delete tools are opt-in via VIKUNJA_MCP_ALLOW_WRITE /
-//     _ALLOW_DELETE — a default install can't modify, share, exfiltrate, or
-//     destroy anything.
-//   - Credentials come from the environment, never hardcoded.
+//   - READ + ADDITIVE tools by default. Write and delete tools are opt-in via
+//     VIKUNJA_MCP_ALLOW_WRITE / _ALLOW_DELETE — a default install can't modify,
+//     share, exfiltrate, or destroy anything.
 
 import pkg from "./package.json" with { type: "json" };
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
 import { makeApi } from "./api.js";
-import {
-  requireAbsoluteUrl,
-  flagEnabled,
-  tierAllowed,
-  tierAnnotations,
-  SERVER_INSTRUCTIONS,
-  requireNodeMinVersion,
-  toolDisplayTitle,
-} from "./lib.js";
+import { requireNodeMinVersion, tierAllowed } from "./lib.js";
 import { buildTools } from "./tools.js";
+import { resolveConfig, createServer } from "./server.js";
 
+let config;
 try {
   requireNodeMinVersion(20);
+  config = resolveConfig(process.env);
 } catch (err) {
   console.error(`vikunja-mcp: ${err.message}`);
   process.exit(1);
 }
 
-let BASE;
-try {
-  BASE = requireAbsoluteUrl(process.env.VIKUNJA_URL, "VIKUNJA_URL");
-} catch (err) {
-  console.error(`vikunja-mcp: ${err.message}`);
-  process.exit(1);
-}
+const api = makeApi({ base: config.base, token: config.token });
+// Tools are defined in tools.js with an injected api(); gate by tier here so a
+// default install exposes only read + additive.
+const tools = buildTools({ api, base: config.base }).filter((t) => tierAllowed(t.tier, config.gate));
 
-const TOKEN = process.env.VIKUNJA_API_TOKEN;
-if (!TOKEN) {
-  console.error("vikunja-mcp: set VIKUNJA_API_TOKEN");
-  process.exit(1);
-}
-
-const api = makeApi({ base: BASE, token: TOKEN });
-
-// Opt-in gating: read + additive tools are always exposed; write (update) and
-// delete (destructive) tools appear only when their env flag is set. A default
-// install can read and add — never modify or destroy.
-const gate = {
-  allowWrite: flagEnabled(process.env.VIKUNJA_MCP_ALLOW_WRITE),
-  allowDelete: flagEnabled(process.env.VIKUNJA_MCP_ALLOW_DELETE),
-};
-
-// Tools are defined in tools.js with an injected api(); gate by tier here.
-const TOOLS = buildTools({ api, base: BASE }).filter((t) => tierAllowed(t.tier, gate));
-
-const server = new Server(
-  { name: "vikunja-mcp", version: pkg.version, instructions: SERVER_INSTRUCTIONS },
-  { capabilities: { tools: {} } },
-);
-
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: TOOLS.map(({ name, description, inputSchema, tier }) => ({
-    name,
-    title: toolDisplayTitle(name),
-    description,
-    inputSchema,
-    annotations: tierAnnotations(tier, name),
-  })),
-}));
-
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
-  try {
-    const tool = TOOLS.find((t) => t.name === req.params.name);
-    if (!tool) throw new Error(`Unknown tool: ${req.params.name}`);
-    const result = await tool.run(req.params.arguments ?? {});
-    // Every tool returns a JSON object, so also expose it as structuredContent
-    // for clients that consume typed output; keep the text block for back-compat.
-    return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-      structuredContent: result,
-    };
-  } catch (err) {
-    return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
-  }
-});
-
+const server = createServer({ tools, version: pkg.version });
 await server.connect(new StdioServerTransport());
 console.error("vikunja-mcp connected (stdio)");

@@ -27,7 +27,7 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
       - name: No console.log in server sources
         run: |
-          if grep -n 'console\.log' index.js lib.js tools.js api.js; then
+          if grep -n 'console\.log' index.js server.js lib.js tools.js api.js; then
             echo "console.log is not allowed in server sources (use console.error for stderr)"
             exit 1
           fi
@@ -57,7 +57,7 @@ jobs:
         run: |
           npm install --no-save --no-package-lock --no-audit --no-fund \
             eslint@10.6.0 eslint-plugin-security@4.0.1
-          npx --no-install eslint --max-warnings 0 index.js api.js lib.js tools.js
+          npx --no-install eslint --max-warnings 0 index.js server.js api.js lib.js tools.js
 
   dependency-review:
     name: Dependency review
