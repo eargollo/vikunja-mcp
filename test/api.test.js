@@ -28,6 +28,7 @@ test("classifyFetchError maps common network codes", () => {
   assert.equal(classifyFetchError({ code: "ENOTFOUND" }), "host not found");
   assert.equal(classifyFetchError({ code: "ETIMEDOUT" }), "timed out");
   assert.equal(classifyFetchError({ code: "ERR_SSL_WRONG_VERSION_NUMBER" }), "TLS error");
+  assert.equal(classifyFetchError({ code: "CERT_HAS_EXPIRED" }), "TLS error");
   assert.equal(classifyFetchError(new Error("boom")), "network error");
 });
 

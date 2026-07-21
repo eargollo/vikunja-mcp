@@ -24,6 +24,9 @@ import {
   requireTeamId,
   requireUsername,
   teamDetail,
+  teamMemberSummary,
+  labelDetail,
+  caldavTokenSummary,
   caldavBaseFromApiUrl,
   requirePositiveIntIdArray,
   requireTaskId,
@@ -682,6 +685,23 @@ test("teamDetail shapes id/name/members", () => {
     name: "Squad",
     members: [{ id: 2, username: "a", admin: true }],
   });
+});
+
+test("teamDetail falls back to team_members, then to an empty list", () => {
+  // Vikunja returns members under `team_members` on some endpoints.
+  assert.deepEqual(
+    teamDetail({ id: 1, name: "S", team_members: [{ id: 2, username: "a", admin: false }] }).members,
+    [{ id: 2, username: "a", admin: false }],
+  );
+  assert.deepEqual(teamDetail({ id: 2, name: "T" }).members, []);
+});
+
+test("summary shapers default their missing optional fields", () => {
+  assert.deepEqual(notificationSummary({ id: 1 }), { id: 1, name: "", read: false, created: null });
+  assert.equal(taskDetail({ id: 1, title: "x", project_id: 1 }).done, false);
+  assert.equal(labelDetail({ id: 1, title: "x" }).hex_color, "");
+  assert.deepEqual(teamMemberSummary({ id: 2 }), { id: 2, username: "", admin: false });
+  assert.deepEqual(caldavTokenSummary({ id: 3 }), { id: 3, created: null });
 });
 
 test("decodeBase64 rejects payloads above MAX_UPLOAD_BYTES", () => {
