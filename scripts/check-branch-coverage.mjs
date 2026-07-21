@@ -22,16 +22,17 @@ import path from "node:path";
 import process from "node:process";
 
 // Repo-relative source path -> minimum acceptable branch coverage (%).
-// index.js is the executable shell: its coverage is aggregated from the
-// subprocess tests in test/index.test.js (guards + a fake-config boot), while
-// server.js holds the extracted handler logic tested in-process. Both sit at
-// 100% today; the ratchet keeps them there.
+// Every source file is fully branch-covered today, so each is pinned at 100 and
+// the ratchet keeps it there — a new uncovered branch fails the build and names
+// the file. index.js's coverage is aggregated from the subprocess tests in
+// test/index.test.js (guards + a fake-config boot); the rest is in-process. A
+// new source file not listed here must clear DEFAULT_FLOOR.
 const FLOORS = {
-  "api.js": 96,
+  "api.js": 100,
   "index.js": 100,
-  "lib.js": 97,
+  "lib.js": 100,
   "server.js": 100,
-  "tools.js": 84,
+  "tools.js": 100,
 };
 const DEFAULT_FLOOR = 90;
 

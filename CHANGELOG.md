@@ -45,6 +45,12 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
   with a fake URL/token — no Vikunja — to check tier gating and a call
   round-trip). Both `index.js` and `server.js` now reach 100% line/branch
   coverage and are enforced by the per-file floor gate.
+- Covered the remaining defensive branches in `tools.js` (raised from 84% to
+  100% branch), plus the last few `?? default` fallbacks in `lib.js`/`api.js`:
+  Vikunja returning `null` data for list endpoints, response objects missing
+  optional fields, and update tools changing a different subset of fields. Every
+  source file is now at 100% line/branch/function, and the per-file floors are
+  ratcheted to 100.
 
 ## 1.2.0 - 2026-07-20
 

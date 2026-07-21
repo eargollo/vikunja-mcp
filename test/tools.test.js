@@ -1614,3 +1614,190 @@ test("delete_caldav_token DELETEs /user/settings/token/caldav/{id}", async () =>
   };
   assert.deepEqual(await byName(build(api), "delete_caldav_token").run({ token_id: 3 }), { ok: true, token_id: 3 });
 });
+
+// --- Defensive-branch coverage --------------------------------------------------
+// The happy-path tests above always feed Vikunja responses that carry every
+// field, so the null/missing sides of tools.js's `?? []` / `?? default` guards
+// and the "a different subset of fields changed" merge branches go unexercised.
+// These target exactly those, so a regression that drops a fallback is caught.
+
+const nullData = async () => ({ data: null, headers: headers() });
+
+test("list tools return an empty envelope when Vikunja returns null data", async () => {
+  const cases = [
+    ["list_projects", {}],
+    ["list_tasks", { project_id: 1 }],
+    ["list_all_tasks", {}],
+    ["list_labels", {}],
+    ["list_teams", {}],
+    ["list_notifications", {}],
+    ["list_api_tokens", {}],
+    ["list_task_comments", { task_id: 1 }],
+    ["list_task_attachments", { task_id: 1 }],
+    ["list_webhooks", { project_id: 1 }],
+  ];
+  for (const [name, args] of cases) {
+    const res = await byName(build(nullData), name).run(args);
+    assert.equal(res.count, 0, `${name} count`);
+    assert.deepEqual(res.items, [], `${name} items`);
+  }
+});
+
+test("list_task_assignees returns [] for a task with no assignees array", async () => {
+  const res = await byName(build(async () => ({ data: { id: 7 }, headers: headers() })), "list_task_assignees").run({ task_id: 7 });
+  assert.deepEqual(res, { task_id: 7, count: 0, items: [] });
+});
+
+test("list_saved_filters contributes no filters from a null page", async () => {
+  const api = async () => ({ data: null, headers: headers({ "x-pagination-total-pages": "1" }) });
+  assert.deepEqual(await byName(build(api), "list_saved_filters").run({}), { count: 0, items: [] });
+});
+
+test("list_buckets returns [] when the kanban view has null buckets", async () => {
+  const api = async (m, p) => {
+    if (p === "/projects/5/views") return { data: [{ id: 9, view_kind: "kanban" }], headers: headers() };
+    return { data: null, headers: headers() };
+  };
+  assert.equal((await byName(build(api), "list_buckets").run({ project_id: 5 })).count, 0);
+});
+
+test("kanban tools throw 'no kanban view' when the views list is null", async () => {
+  await assert.rejects(() => byName(build(nullData), "list_buckets").run({ project_id: 5 }), /no kanban view/);
+});
+
+test("get_caldav_info tolerates a null CalDAV token list", async () => {
+  const api = async (m, p) => {
+    if (p === "/user") return { data: { id: 1, username: "me" }, headers: headers() };
+    return { data: null, headers: headers() };
+  };
+  assert.deepEqual((await byName(build(api), "get_caldav_info").run({})).tokens, []);
+});
+
+test("upload_task_attachment returns an empty list when Vikunja returns null data", async () => {
+  const content = Buffer.from("x").toString("base64");
+  const res = await byName(build(nullData), "upload_task_attachment").run({ task_id: 7, filename: "x", content_base64: content });
+  assert.deepEqual(res, { task_id: 7, count: 0, items: [] });
+});
+
+test("list_labels and create_label default a missing hex_color to ''", async () => {
+  const list = await byName(build(async () => ({ data: [{ id: 1, title: "x" }], headers: headers() })), "list_labels").run({});
+  assert.equal(list.items[0].hex_color, "");
+  const created = await byName(build(async () => ({ data: { id: 5, title: "x" }, headers: headers() })), "create_label").run({ title: "x" });
+  assert.equal(created.hex_color, "");
+});
+
+test("create_api_token and create_caldav_token default missing timestamps to null", async () => {
+  const tok = await byName(
+    build(async () => ({ data: { id: 5, title: "CI", token: "tk" }, headers: headers() })),
+    "create_api_token",
+  ).run({ title: "CI", expires_at: "2027-01-01T00:00:00Z", permissions: { tasks: ["read_all"] } });
+  assert.equal(tok.expires_at, null);
+  const cd = await byName(build(async () => ({ data: { id: 3, token: "cd" }, headers: headers() })), "create_caldav_token").run({});
+  assert.equal(cd.created, null);
+});
+
+test("share_project_with_team defaults the permission to read (0) when omitted", async () => {
+  const api = async (m, p, b) => {
+    assert.equal(b.permission, 0);
+    return { data: { team_id: b.team_id, permission: 0 }, headers: headers() };
+  };
+  assert.equal((await byName(build(api), "share_project_with_team").run({ project_id: 4, team_id: 2 })).permission, 0);
+});
+
+test("update_task applies description and due_date (not just priority/done)", async () => {
+  let posted;
+  const api = async (m, p, b) => {
+    if (m === "GET") return { data: { id: 7, title: "T", done: false, project_id: 1 }, headers: headers() };
+    posted = b;
+    return { data: { ...b }, headers: headers() };
+  };
+  await byName(build(api), "update_task").run({ task_id: 7, description: "d", due_date: "2026-08-01" });
+  assert.equal(posted.description, "d");
+  assert.equal(posted.due_date, "2026-08-01T00:00:00.000Z");
+});
+
+test("update_project applies description and parent_project_id", async () => {
+  let posted;
+  const api = async (m, p, b) => {
+    if (m === "GET") return { data: { id: 4, title: "P" }, headers: headers() };
+    posted = b;
+    return { data: { id: 4, title: "P", ...b }, headers: headers() };
+  };
+  await byName(build(api), "update_project").run({ project_id: 4, description: "d", parent_project_id: 2 });
+  assert.equal(posted.description, "d");
+  assert.equal(posted.parent_project_id, 2);
+});
+
+test("update_label changes hex_color only, preserving the current title", async () => {
+  let posted;
+  const api = async (m, p, b) => {
+    if (m === "GET") return { data: { id: 3, title: "Keep", hex_color: "000000" }, headers: headers() };
+    posted = b;
+    return { data: { id: 3, title: "Keep", hex_color: "abcdef" }, headers: headers() };
+  };
+  const res = await byName(build(api), "update_label").run({ label_id: 3, hex_color: "#ABCDEF" });
+  assert.equal(posted.title, "Keep", "title preserved (title-undefined branch)");
+  assert.equal(posted.hex_color, "abcdef");
+  assert.equal(res.hex_color, "abcdef");
+});
+
+test("update_saved_filter applies title + description and tolerates a filter-less current", async () => {
+  let posted;
+  const api = async (m, p, b) => {
+    if (m === "GET") return { data: { id: 5, title: "Old" }, headers: headers() }; // no `filters` object
+    posted = b;
+    return { data: { id: 5, title: b.title, description: b.description, filters: b.filters }, headers: headers() };
+  };
+  const res = await byName(build(api), "update_saved_filter").run({ filter_id: 5, title: "New", description: "d" });
+  assert.equal(posted.title, "New");
+  assert.equal(posted.description, "d");
+  assert.deepEqual(posted.filters, { filter: "" }, "filter defaults to '' when neither changed nor present");
+  assert.equal(res.title, "New");
+});
+
+test("update_webhook applies new events, and defaults a missing current events to []", async () => {
+  // change events on a current webhook that has none -> exercises requireEvents(events)
+  let posted;
+  const withEvents = async (m, p, b) => {
+    if (m === "GET") return { data: [{ id: 8, target_url: "https://x" }], headers: headers() };
+    posted = b;
+    return { data: { id: 8, target_url: "https://x", events: b.events }, headers: headers() };
+  };
+  await byName(build(withEvents), "update_webhook").run({ project_id: 4, webhook_id: 8, events: ["task.created"] });
+  assert.deepEqual(posted.events, ["task.created"]);
+
+  // change only target_url on a current webhook with no events -> current.events ?? []
+  let posted2;
+  const noEvents = async (m, p, b) => {
+    if (m === "GET") return { data: [{ id: 8, target_url: "https://x" }], headers: headers() };
+    posted2 = b;
+    return { data: { id: 8, target_url: b.target_url, events: b.events }, headers: headers() };
+  };
+  await byName(build(noEvents), "update_webhook").run({ project_id: 4, webhook_id: 8, target_url: "https://y" });
+  assert.deepEqual(posted2.events, []);
+});
+
+test("update_webhook / update_bucket error when the target list comes back null", async () => {
+  await assert.rejects(
+    () => byName(build(nullData), "update_webhook").run({ project_id: 4, webhook_id: 8, secret: "s" }),
+    /webhook 8 not found/,
+  );
+  const bucketApi = async (m, p) => {
+    if (p === "/projects/5/views") return { data: [{ id: 9, view_kind: "kanban" }], headers: headers() };
+    return { data: null, headers: headers() };
+  };
+  await assert.rejects(
+    () => byName(build(bucketApi), "update_bucket").run({ project_id: 5, bucket_id: 2, title: "X" }),
+    /bucket 2 not found/,
+  );
+});
+
+test("bulk_update_tasks carries title/description/due_date into fields+values", async () => {
+  let posted;
+  const api = async (m, p, b) => ((posted = b), { data: {}, headers: headers() });
+  await byName(build(api), "bulk_update_tasks").run({ task_ids: [1], title: "T", description: "d", due_date: "2026-08-01" });
+  assert.deepEqual([...posted.fields].sort(), ["description", "due_date", "title"]);
+  assert.equal(posted.values.title, "T");
+  assert.equal(posted.values.description, "d");
+  assert.equal(posted.values.due_date, "2026-08-01T00:00:00.000Z");
+});
