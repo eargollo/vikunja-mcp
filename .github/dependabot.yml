@@ -24,3 +24,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # Bump all Actions in a single PR. In particular this keeps
+      # github/codeql-action's init and analyze in lockstep — they must run at
+      # the same version, and separate per-action PRs each leave a version
+      # mismatch that fails the CodeQL analysis until both merge.
+      github-actions:
+        patterns:
+          - "*"
