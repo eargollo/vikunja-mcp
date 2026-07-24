@@ -51,6 +51,13 @@ test("readResponseText rejects when Content-Length exceeds limit", async () => {
   await assert.rejects(() => readResponseText(res), /exceeds/);
 });
 
+test("readResponseText accepts a body exactly at the limit (inclusive boundary)", async () => {
+  // Pins the > vs >= boundary on both the Content-Length pre-check and the
+  // actual text-length check: a body of exactly maxBytes must be allowed.
+  const res = mockResponse({ body: "x".repeat(50), headers: { "content-length": "50" } });
+  assert.equal(await readResponseText(res, 50), "x".repeat(50));
+});
+
 test("makeApi returns parsed JSON on 2xx", async () => {
   const fetch = async (url, opts) => {
     assert.equal(url, `${BASE}/projects`);

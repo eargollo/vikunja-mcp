@@ -717,3 +717,10 @@ test("decodeBase64 short-circuits on encoded length before decoding (custom cap)
   assert.ok(encoded.length > 4);
   assert.throws(() => decodeBase64(encoded, "content_base64", 3), /exceeds maximum size/);
 });
+
+test("decodeBase64 accepts a payload exactly at the cap (inclusive boundary)", () => {
+  // "abc" -> 3 decoded bytes; a 3-byte cap must allow it. Pins the > vs >=
+  // boundary on both the encoded-length pre-check and the decoded-size check.
+  const buf = decodeBase64(Buffer.from("abc").toString("base64"), "content_base64", 3);
+  assert.equal(Buffer.from(buf).toString("utf8"), "abc");
+});

@@ -16,6 +16,22 @@ import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+import { buildTools } from "../tools.js";
+import { tierAllowed } from "../lib.js";
+
+// The default vs gated tool split is derived from each tool's tier + the gating
+// rule, not restated as a hand-maintained list — so adding a tool can't leave a
+// stale snapshot behind. buildTools() never calls api() at construction time, so
+// a dummy api/base is fine here. (Each tool's exact tier is independently pinned
+// in test/tools.test.js, which is the real regression guard for tier changes.)
+const ALL_TOOLS = buildTools({
+  api: async () => ({ data: null, headers: new Headers() }),
+  base: "http://vikunja.test/api/v1",
+});
+const DEFAULT_GATE = { allowWrite: false, allowDelete: false };
+const defaultToolNames = ALL_TOOLS.filter((t) => tierAllowed(t.tier, DEFAULT_GATE)).map((t) => t.name).sort();
+const gatedToolNames = ALL_TOOLS.filter((t) => !tierAllowed(t.tier, DEFAULT_GATE)).map((t) => t.name);
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(HERE, "..", "index.js");
 
@@ -100,79 +116,9 @@ async function getWriteClient() {
 
 test("exposes exactly the read + additive tool set by default", { skip }, async () => {
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
-  assert.deepEqual(names, [
-    "add_label_to_task",
-    "add_task_comment",
-    "add_team_member",
-    "assign_user",
-    "create_bucket",
-    "create_label",
-    "create_project",
-    "create_saved_filter",
-    "create_task",
-    "create_task_relation",
-    "create_team",
-    "get_caldav_info",
-    "get_current_user",
-    "get_project",
-    "get_task",
-    "get_team",
-    "list_all_tasks",
-    "list_api_tokens",
-    "list_buckets",
-    "list_labels",
-    "list_notifications",
-    "list_projects",
-    "list_saved_filters",
-    "list_task_assignees",
-    "list_task_attachments",
-    "list_task_comments",
-    "list_task_relations",
-    "list_tasks",
-    "list_teams",
-    "list_webhooks",
-    "search_users",
-    "subscribe",
-    "upload_task_attachment",
-  ]);
-  for (const gated of [
-    "update_task",
-    "set_task_done",
-    "bulk_update_tasks",
-    "set_task_labels",
-    "set_task_assignees",
-    "update_project",
-    "archive_project",
-    "delete_project",
-    "delete_task",
-    "update_label",
-    "delete_label",
-    "remove_label_from_task",
-    "unassign_user",
-    "update_task_comment",
-    "delete_task_comment",
-    "delete_task_relation",
-    "delete_task_attachment",
-    "update_bucket",
-    "delete_bucket",
-    "move_task_to_bucket",
-    "update_team",
-    "remove_team_member",
-    "toggle_team_member_admin",
-    "update_saved_filter",
-    "delete_saved_filter",
-    "mark_notification_read",
-    "unsubscribe",
-    "create_api_token",
-    "create_caldav_token",
-    "delete_caldav_token",
-    "create_link_share",
-    "create_webhook",
-    "update_webhook",
-    "share_project_with_team",
-    "share_project_with_user",
-    "delete_webhook",
-  ]) {
+  assert.deepEqual(names, defaultToolNames);
+  assert.ok(gatedToolNames.length > 0, "there are gated tools to check");
+  for (const gated of gatedToolNames) {
     assert.ok(!names.includes(gated), `${gated} must be gated off by default`);
   }
 });

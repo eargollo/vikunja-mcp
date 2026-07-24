@@ -51,6 +51,11 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
   optional fields, and update tools changing a different subset of fields. Every
   source file is now at 100% line/branch/function, and the per-file floors are
   ratcheted to 100.
+- The e2e "exposes exactly the read + additive set by default" test now derives
+  the expected default/gated tool split from each tool's tier and the gating
+  rule (`buildTools()` + `tierAllowed()`) instead of two hand-maintained name
+  lists, so adding a tool can't leave a stale snapshot. Each tool's exact tier
+  is still independently pinned in `test/tools.test.js`.
 
 ## 1.2.0 - 2026-07-20
 
