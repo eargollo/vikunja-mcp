@@ -5,6 +5,17 @@ release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Unreleased
 
+### Security
+
+- Bumped the transitive `fast-uri` to 3.1.4 (lockfile only) to clear a
+  high-severity advisory (GHSA-v2hh-gcrm-f6hx, host confusion via a literal
+  backslash authority delimiter; pulled in via `@modelcontextprotocol/sdk` →
+  `ajv`). This is what the `npm audit --omit=dev --audit-level=high` CI gate was
+  failing on. A remaining moderate advisory in `@hono/node-server` stays: it
+  needs an SDK major bump to reach a fixed 2.x, and it is the HTTP-transport
+  adapter, which this stdio-only server never loads — so it's below the CI gate
+  and off the used code path.
+
 ### Fixed
 
 - `bulk_update_tasks` now actually applies the update. Vikunja's
