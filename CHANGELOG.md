@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Version bumps happen at
 release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
-## Unreleased
+## 1.2.1 - 2026-07-26
 
 ### Security
 
