@@ -3,6 +3,27 @@
 All notable changes to this project are documented here. Version bumps happen at
 release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
+## 1.2.3 - 2026-09-07
+
+### Fixed
+
+- `subscribe` is now idempotent. Newer Vikunja releases (2.6.0+) auto-subscribe
+  a task's creator, so an explicit `subscribe` on a task you just created came
+  back `412 "You're already subscribed."` (code 12002) and surfaced as a tool
+  error. Subscribe is a desired-state operation — whether or not a subscription
+  already existed, the state the caller asked for is achieved — so "already
+  subscribed" is now treated as success. The output shape is unchanged. `api()`
+  additionally attaches the HTTP `status` to the errors it throws so callers can
+  branch on it without string-matching the message.
+
+### CI / tooling
+
+- The end-to-end suite now runs against `vikunja/vikunja:latest` as a **required,
+  merge-blocking** check, alongside the reproducible pinned-baseline leg, so an
+  upstream wire-contract change is caught on the PR rather than only in the
+  weekly `upstream-drift.yml` issue (which stays as a guardrail). The pinned
+  baseline moved 2.3.0 → 2.6.0.
+
 ## 1.2.2 - 2026-09-07
 
 ### Security
