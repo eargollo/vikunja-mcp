@@ -20,7 +20,7 @@ services:
     # VIKUNJA_VERSION to also run this against :latest in a *non-blocking* matrix
     # leg (see .github/workflows/ci.yml), giving early warning of wire-contract
     # drift without gating merges.
-    image: vikunja/vikunja:${VIKUNJA_VERSION:-2.3.0}
+    image: vikunja/vikunja:${VIKUNJA_VERSION:-2.6.0}
     container_name: vikunja-test
     ports:
       - "3456:3456"
