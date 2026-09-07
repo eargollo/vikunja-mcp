@@ -1497,7 +1497,15 @@ export function buildTools({ api, base }) {
       run: async ({ entity, entity_id }) => {
         const ent = requireEntity(entity);
         const eid = requirePositiveIntId(entity_id, "entity_id");
-        await api("PUT", `/subscriptions/${ent}/${eid}`);
+        try {
+          await api("PUT", `/subscriptions/${ent}/${eid}`);
+        } catch (err) {
+          // Vikunja returns 412 when the subscription already exists. Newer
+          // releases auto-subscribe a task's creator, so an explicit subscribe
+          // now hits this. Subscribe is a desired-state operation, so "already
+          // subscribed" is a success, not an error.
+          if (err?.status !== 412) throw err;
+        }
         return okResult({ entity: ent, entity_id: eid });
       },
     },
