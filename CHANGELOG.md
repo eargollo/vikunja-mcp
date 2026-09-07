@@ -3,6 +3,36 @@
 All notable changes to this project are documented here. Version bumps happen at
 release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
+## 1.2.2 - 2026-09-07
+
+### Security
+
+- Cleared every outstanding `npm audit` finding — lockfile only, all transitive
+  under the single runtime dependency (`@modelcontextprotocol/sdk`) — taking
+  `npm audit --omit=dev` to zero vulnerabilities. This is the same
+  `--audit-level=high` CI gate that had been failing:
+  - `ip-address` → 10.7.0 (high: leading-zero octet, CIDR-suffix, and
+    IPv4-mapped/NAT64 misclassifications that bypass SSRF / trust-boundary
+    checks — GHSA-mwp4-54f8-5fhr, GHSA-4xrf-jv44-h6hh, GHSA-22jq-vg5j-6vgg).
+  - `fast-uri` → 3.1.7 (high: host confusion and SSRF via backslash authority,
+    skipped IDN canonicalization, IPv6 normalization, and repeated
+    percent-decoding).
+  - `hono` → 4.13.7 (moderate: CORS ReDoS, `memo()` cross-request SSR
+    disclosure, proxy `Connection`-header leak, i18n middleware DoS).
+  - `qs` → 6.16.0 (moderate: array-limit bypass via bracket-key comma parsing,
+    attacker-controlled `isBuffer` DoS).
+
+### CI / tooling
+
+- Consolidated the stalled per-package dependency PRs into one change and moved
+  the pinned GitHub Actions forward:
+  - `trufflesecurity/trufflehog` → v3.97.4
+  - `github/codeql-action` (init + analyze) → v4.37.9
+  - `softprops/action-gh-release` → v3.0.3
+  - `.github/actions/e2e` composite action: `actions/setup-node` v4.4.0 →
+    v7.0.0, which had drifted three majors behind the top-level workflows
+    because dependabot does not scan nested composite actions.
+
 ## 1.2.1 - 2026-07-26
 
 ### Security
