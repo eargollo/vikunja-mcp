@@ -99,8 +99,8 @@ jobs:
   # Vikunja version (docker-compose's default), so it stays reproducible. The
   # job name is load-bearing — the branch ruleset requires this exact status
   # check ("End-to-end (live Vikunja)"), so don't rename it without updating the
-  # ruleset. Drift against :latest is tracked out-of-band by upstream-drift.yml,
-  # which files an issue rather than gating PRs on a floating upstream tag.
+  # ruleset. Paired with e2e-latest below: this pinned leg is a stable baseline,
+  # so when :latest breaks you can tell an MCP bug from upstream wire drift.
   e2e:
     name: End-to-end (live Vikunja)
     runs-on: ubuntu-latest
@@ -109,4 +109,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/e2e
         with:
-          vikunja-version: "2.3.0"
+          vikunja-version: "2.6.0"
+
+  # Also required: run the same suite against vikunja/vikunja:latest so an
+  # upstream wire-contract change blocks the merge immediately, rather than only
+  # surfacing later in the weekly upstream-drift.yml issue. The job name is
+  # load-bearing too — the ruleset requires "End-to-end (Vikunja latest)".
+  # upstream-drift.yml stays as a guardrail: it catches drift even on weeks with
+  # no PRs (a fresh upstream release with the tree untouched) and files an issue.
+  e2e-latest:
+    name: End-to-end (Vikunja latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/e2e
+        with:
+          vikunja-version: latest

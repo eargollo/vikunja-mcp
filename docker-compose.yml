@@ -15,12 +15,13 @@
 services:
   vikunja:
     # Pinned by default for reproducible local + CI runs — bump the default
-    # deliberately (and re-run the suite) rather than tracking :latest, so an
-    # upstream release can't break the required build silently. CI overrides
-    # VIKUNJA_VERSION to also run this against :latest in a *non-blocking* matrix
-    # leg (see .github/workflows/ci.yml), giving early warning of wire-contract
-    # drift without gating merges.
-    image: vikunja/vikunja:${VIKUNJA_VERSION:-2.3.0}
+    # deliberately (and re-run the suite) when adopting a newer baseline. CI runs
+    # the e2e twice: against this pinned version (the "End-to-end (live Vikunja)"
+    # required check) and against vikunja:latest (the "End-to-end (Vikunja
+    # latest)" required check), so upstream wire-contract drift blocks merges.
+    # .github/workflows/upstream-drift.yml also runs :latest weekly and files an
+    # issue as a guardrail for weeks with no PRs.
+    image: vikunja/vikunja:${VIKUNJA_VERSION:-2.6.0}
     container_name: vikunja-test
     ports:
       - "3456:3456"

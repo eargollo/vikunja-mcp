@@ -88,7 +88,10 @@ test("makeApi throws on 4xx with body detail", async () => {
     fetch: async () => mockResponse({ status: 404, body: "not found" }),
     logError: (...args) => logs.push(args.join(" ")),
   });
-  await assert.rejects(() => api("GET", "/tasks/99"), /404: not found/);
+  await assert.rejects(
+    () => api("GET", "/tasks/99"),
+    (err) => err.status === 404 && /404: not found/.test(err.message),
+  );
   assert.match(logs[0], /404: not found/);
 });
 

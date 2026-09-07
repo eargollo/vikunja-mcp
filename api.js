@@ -89,16 +89,20 @@ export function makeApi({
       } else {
         logError(`vikunja-mcp: ${method} ${path} -> ${res.status}: (body omitted — may contain secrets)`);
       }
+      // Attach the HTTP status so callers can branch on it (e.g. subscribe
+      // treats 412 "already subscribed" as an idempotent success) without
+      // brittly string-matching the message.
+      const httpError = (message) => Object.assign(new Error(message), { status: res.status });
       if (res.status >= 500) {
-        throw new Error(`Vikunja ${method} ${path} -> ${res.status}: server error`);
+        throw httpError(`Vikunja ${method} ${path} -> ${res.status}: server error`);
       }
       if (res.status === 401 || res.status === 403) {
-        throw new Error(
+        throw httpError(
           `Vikunja ${method} ${path} -> ${res.status}: authentication failed — check VIKUNJA_API_TOKEN`,
         );
       }
       const detail = isSensitiveErrorPath(method, path) ? "request failed" : text.slice(0, 400);
-      throw new Error(`Vikunja ${method} ${path} -> ${res.status}: ${detail}`);
+      throw httpError(`Vikunja ${method} ${path} -> ${res.status}: ${detail}`);
     }
 
     let data = null;

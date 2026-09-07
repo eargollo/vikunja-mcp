@@ -273,6 +273,26 @@ test("subscribe validates entity + id and PUTs the subscription", async () => {
   assert.deepEqual(res, { ok: true, entity: "task", entity_id: 7 });
 });
 
+test("subscribe treats a 412 (already subscribed) as an idempotent success", async () => {
+  // Newer Vikunja releases auto-subscribe a task's creator, so an explicit
+  // subscribe returns 412. Subscribe is desired-state, so that must still be ok.
+  const api = async () => {
+    throw Object.assign(new Error("Vikunja PUT /subscriptions/task/7 -> 412: already subscribed"), { status: 412 });
+  };
+  const res = await byName(buildTools({ api, base: TEST_BASE }), "subscribe").run({ entity: "task", entity_id: 7 });
+  assert.deepEqual(res, { ok: true, entity: "task", entity_id: 7 });
+});
+
+test("subscribe rethrows a non-412 api error", async () => {
+  const api = async () => {
+    throw Object.assign(new Error("Vikunja PUT /subscriptions/task/7 -> 500: server error"), { status: 500 });
+  };
+  await assert.rejects(
+    () => byName(buildTools({ api, base: TEST_BASE }), "subscribe").run({ entity: "task", entity_id: 7 }),
+    /500: server error/,
+  );
+});
+
 test("subscribe rejects an unknown entity before calling the api", async () => {
   let called = false;
   const api = async () => {
