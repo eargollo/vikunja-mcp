@@ -3,6 +3,25 @@
 All notable changes to this project are documented here. Version bumps happen at
 release tags only (see [docs/RELEASING.md](docs/RELEASING.md)).
 
+## 1.2.4 - 2026-10-14
+
+### Security
+
+- Raised the `@modelcontextprotocol/sdk` floor `^1.20.0` → `^1.32.1`. The old
+  floor sat inside the range of a high-severity advisory (GHSA-6qxp-vccf-f47h):
+  the SDK's OAuth client could send credentials to an authorization server
+  chosen by the MCP server.
+- Refreshed the lockfile so every transitive dependency is current within the
+  SDK's declared ranges, clearing the remaining `npm audit` findings and taking
+  `npm audit` back to zero vulnerabilities:
+  - `proxy-addr` → 2.0.8 (critical: IP spoofing via an IPv4-mapped IPv6 trust
+    subnet — GHSA-jqcg-44mw-7w3h).
+  - `ip-address` → 10.7.4 (moderate: cross-family subnet comparison that admits
+    an address outside its range, and an unbounded parse diagnostic that can
+    stall the process — GHSA-j6r3-76f7-8jcv, GHSA-h3mg-xc3c-68pw).
+  - `fast-uri` → 3.1.8 (moderate: inconsistent host case normalization via
+    percent-encoded octets — GHSA-hrr3-gc8f-f4qj).
+
 ## 1.2.3 - 2026-09-07
 
 ### Fixed
