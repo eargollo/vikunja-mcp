@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
       - run: npm ci
       # Fail the build on a known-vulnerable production dependency. --omit=dev
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 26
       # eslint + eslint-plugin-security are deliberately NOT project deps (keeps
       # the tree to one runtime dep, no devDeps). Install them ephemerally, at
       # pinned versions, without touching package.json or the lockfile. .npmrc
@@ -56,7 +56,7 @@ jobs:
       - name: Run ESLint (ephemeral, pinned)
         run: |
           npm install --no-save --no-package-lock --no-audit --no-fund \
-            eslint@10.6.0 eslint-plugin-security@4.0.1
+            eslint@10.15.0 eslint-plugin-security@4.2.1
           npx --no-install eslint --max-warnings 0 index.js server.js api.js lib.js tools.js
 
   dependency-review:
@@ -68,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Review dependency changes
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
         with:
           fail-on-severity: high
 
@@ -109,7 +109,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/e2e
         with:
-          vikunja-version: "2.6.0"
+          vikunja-version: "2.8.0"
 
   # Also required: run the same suite against vikunja/vikunja:latest so an
   # upstream wire-contract change blocks the merge immediately, rather than only
