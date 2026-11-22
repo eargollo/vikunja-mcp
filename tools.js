@@ -815,7 +815,7 @@ export function buildTools({ api, base }) {
         const tid = requireTaskId(task_id);
         const cid = requireCommentId(comment_id);
         const text = requireComment(comment);
-        const { data } = await api("PUT", `/tasks/${tid}/comments/${cid}`, { comment: text });
+        const { data } = await api("POST", `/tasks/${tid}/comments/${cid}`, { comment: text });
         if (!data || data.id == null) {
           throw new Error("Vikunja returned an empty comment response");
         }
