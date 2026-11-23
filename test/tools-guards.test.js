@@ -18,7 +18,7 @@ const noApi = async (method, path) => {
   throw new Error(`api should not be called (got ${method} ${path})`);
 };
 // Build one tool's run() with a given api stub.
-const run = (name, api, base = TEST_BASE) => byName(buildTools({ api, base }), name).run;
+const run = (name, api, base = TEST_BASE) => byName(buildTools({ api, apiV2: api, base }), name).run;
 // Reply for a single (method, path); everything else throws.
 const reply = (method, path, data) => async (m, p) => {
   assert.equal(m, method);
@@ -128,8 +128,8 @@ test("add_task_comment throws when the PUT returns an empty comment", async () =
   await assert.rejects(() => r({ task_id: 7, comment: "hi" }), /empty comment response/);
 });
 
-test("update_task_comment throws when the POST returns an empty comment", async () => {
-  const r = run("update_task_comment", reply("POST", "/tasks/7/comments/2", null));
+test("update_task_comment throws when the PUT returns an empty comment", async () => {
+  const r = run("update_task_comment", reply("PUT", "/tasks/7/comments/2", null));
   await assert.rejects(() => r({ task_id: 7, comment_id: 2, comment: "hi" }), /empty comment response/);
 });
 

@@ -35,9 +35,16 @@ try {
 }
 
 const api = makeApi({ base: config.base, token: config.token });
+// Vikunja 2.8+ moved the task-comment update endpoint into the /api/v2 API
+// (pkg/routes/api/v2/task_comments.go — task-comments-update: PUT
+// /tasks/{task}/comments/{commentid}); the v1 route there returns 404.
+const apiV2 = makeApi({
+  base: config.base.replace(/\/api\/v1$/, "") + "/api/v2",
+  token: config.token,
+});
 // Tools are defined in tools.js with an injected api(); gate by tier here so a
 // default install exposes only read + additive.
-const tools = buildTools({ api, base: config.base }).filter((t) => tierAllowed(t.tier, config.gate));
+const tools = buildTools({ api, apiV2, base: config.base }).filter((t) => tierAllowed(t.tier, config.gate));
 
 const server = createServer({ tools, version: pkg.version });
 await server.connect(new StdioServerTransport());

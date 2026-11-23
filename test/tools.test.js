@@ -1463,7 +1463,7 @@ test("get_caldav_info returns dav URLs and token metadata", async () => {
 
 // --- Unit coverage for handlers previously exercised only by e2e -------------
 
-const build = (api) => buildTools({ api, base: TEST_BASE });
+const build = (api) => buildTools({ api, apiV2: api, base: TEST_BASE });
 
 test("delete_label DELETEs /labels/{id} and confirms", async () => {
   const seen = [];
@@ -1474,7 +1474,7 @@ test("delete_label DELETEs /labels/{id} and confirms", async () => {
 
 test("update_task_comment POSTs the new text and returns the shaped comment", async () => {
   const api = async (m, p, b) => {
-    assert.deepEqual([m, p, b], ["POST", "/tasks/7/comments/3", { comment: "edited" }]);
+    assert.deepEqual([m, p, b], ["PUT", "/tasks/7/comments/3", { comment: "edited" }]);
     return { data: { id: 3, comment: "edited", author: { username: "me" } }, headers: headers() };
   };
   const res = await byName(build(api), "update_task_comment").run({ task_id: 7, comment_id: 3, comment: " edited " });

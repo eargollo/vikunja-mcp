@@ -94,7 +94,7 @@ const filterSortSchema = {
 
 // Read + additive only. Add tools here deliberately; give each a `tier` so the
 // gating in index.js can keep write/delete off by default.
-export function buildTools({ api, base }) {
+export function buildTools({ api, apiV2, base }) {
   // Vikunja's POST /{entity}/{id} update endpoints (project, filter, task, label)
   // are full-model replaces: the stored row is overwritten by the request body,
   // so any field the body omits is reset to its zero value. They all need the
@@ -815,7 +815,8 @@ export function buildTools({ api, base }) {
         const tid = requireTaskId(task_id);
         const cid = requireCommentId(comment_id);
         const text = requireComment(comment);
-        const { data } = await api("POST", `/tasks/${tid}/comments/${cid}`, { comment: text });
+        // Vikunja 2.8+ moved the comment-update route to the /api/v2 API (PUT).
+        const { data } = await apiV2("PUT", `/tasks/${tid}/comments/${cid}`, { comment: text });
         if (!data || data.id == null) {
           throw new Error("Vikunja returned an empty comment response");
         }
